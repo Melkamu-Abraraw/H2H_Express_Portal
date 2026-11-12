@@ -1,3 +1,4 @@
+import { ForceLight } from "@/components/ship/force-light";
 import { ShipExperience } from "@/components/ship/ship-form";
 
 export const metadata = {
@@ -9,6 +10,9 @@ export const metadata = {
 export default function ShipPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-background pb-[env(safe-area-inset-bottom)]">
+      {/* Runs while the page loads so there is no dark flash before the component below takes over. */}
+      <script dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.remove('dark')" }} />
+      <ForceLight />
       <main className="mx-auto grid w-full max-w-3xl flex-1 content-start gap-6 px-4 py-6 sm:px-6 sm:py-10">
         <ShipExperience
           intro={

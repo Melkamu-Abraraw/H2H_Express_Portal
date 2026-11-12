@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import Script from "next/script";
 import { ArrowRight, Check, ImagePlus, MapPin, Plus, X } from "lucide-react";
 import { DIRECTIONS, RouteLabel } from "@/components/admin/shipping-routes";
@@ -186,7 +187,7 @@ function CaptchaGate({ onPass, notice }) {
   }
 
   return (
-    <div className="grid gap-4 rounded-lg border bg-card p-5 shadow-xs sm:p-6">
+    <div className="grid gap-4 rounded-lg border-[0.5px] bg-card p-5 sm:p-6">
       <Script
         src="https://www.google.com/recaptcha/api.js?render=explicit"
         strategy="afterInteractive"
@@ -215,8 +216,10 @@ export function ShipExperience({ intro }) {
 
   if (RECAPTCHA_KEY && !pass) {
     return (
-      <div className="mx-auto w-full max-w-md self-center py-6 sm:py-16">
+      <div className="mx-auto flex min-h-[calc(100dvh-3rem)] w-full max-w-md items-center sm:min-h-[calc(100dvh-5rem)]">
+        <div className="w-full">
         <CaptchaGate onPass={setPass} notice={notice} />
+        </div>
       </div>
     );
   }
@@ -240,6 +243,18 @@ function ShipForm({ pass, onExpire }) {
   const [branchCode, setBranchCode] = useState(DIRECTIONS.CAET.defaultBranch);
   const [items, setItems] = useState([{ id: 1, desc: "", qty: "1", kg: "" }]);
   const [photo, setPhoto] = useState(null);
+  const [photoUrl, setPhotoUrl] = useState(null);
+
+  const photoUrlRef = useRef(null);
+
+  // Shows a preview of the chosen photo and frees its browser memory when it changes or is removed.
+  function choosePhoto(file) {
+    if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
+    photoUrlRef.current = file ? URL.createObjectURL(file) : null;
+    setPhoto(file);
+    setPhotoUrl(photoUrlRef.current);
+  }
+  useEffect(() => () => photoUrlRef.current && URL.revokeObjectURL(photoUrlRef.current), []);
   const [agreed, setAgreed] = useState(false);
   const [status, setStatus] = useState({ state: "idle" });
   const nextItemId = useRef(2);
@@ -425,7 +440,7 @@ function ShipForm({ pass, onExpire }) {
               Drop-off: {branch.name}
             </strong>
             <span className="text-muted-foreground">{branch.address}.</span>{" "}
-            Please bring your item here. Our team will check it and register it when you arrive.
+            Bring your item to our branch. Our team will inspect and register it.
           </p>
         </div>
       </Section>
@@ -511,9 +526,23 @@ function ShipForm({ pass, onExpire }) {
               type="file"
               accept="image/*"
               className="sr-only"
-              onChange={(event) => setPhoto(event.target.files[0] ?? null)}
+              onChange={(event) => choosePhoto(event.target.files[0] ?? null)}
             />
           </label>
+          {photoUrl && (
+            <div className="relative mt-1 aspect-4/3 w-full max-w-xs overflow-hidden rounded-md border">
+              <Image src={photoUrl} alt="Preview of the chosen photo" fill unoptimized className="object-cover" />
+              <Button
+                type="button"
+                size="icon"
+                aria-label="Remove photo"
+                className="absolute top-1.5 right-1.5 size-7 bg-black/70 text-white hover:bg-black"
+                onClick={() => choosePhoto(null)}
+              >
+                <X />
+              </Button>
+            </div>
+          )}
         </div>
       </Section>
 

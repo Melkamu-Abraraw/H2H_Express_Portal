@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -114,8 +114,35 @@ function NavGroup({ items, pathname }) {
   );
 }
 
+// How many public requests are waiting for review; refreshed on every page change and every 15s.
+function usePendingRequests(pathname) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    function load() {
+      fetch("/api/requests?count=1", { cache: "no-store" })
+        .then((response) => response.json())
+        .then((result) => !cancelled && result.success && setCount(result.count))
+        .catch(() => {});
+    }
+    load();
+    const timer = setInterval(() => document.visibilityState === "visible" && load(), 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pathname]);
+  return count;
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
+  const pending = usePendingRequests(pathname);
+  const main = mainNav.map((item) =>
+    item.href === "/admin/requests" && pending > 0
+      ? { ...item, badge: { count: pending, tone: "alert" } }
+      : item,
+  );
 
   return (
     <Sidebar collapsible="icon">
@@ -148,7 +175,7 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
-            <NavGroup items={mainNav} pathname={pathname} />
+            <NavGroup items={main} pathname={pathname} />
           </SidebarGroupContent>
         </SidebarGroup>
         <SidebarGroup>

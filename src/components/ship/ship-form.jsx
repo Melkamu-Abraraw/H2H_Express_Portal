@@ -24,13 +24,17 @@ import { Textarea } from "@/components/ui/textarea";
 const RECAPTCHA_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
 
 const SHIPPING = [
-  { value: "normal", label: "Normal — about 8 days" },
-  { value: "express", label: "🚨 Express — about 4 days" },
+  { value: "normal", label: "Normal", detail: "About 8 days" },
+  { value: "express", label: "🚨 Express", detail: "About 4 days" },
 ];
 
 
-const CONSENT =
-  "I confirm that the information provided is accurate. I understand that prohibited, illegal, dangerous, or restricted items are not accepted. I agree that Hand to Hand Express may contact me by email, phone, SMS, or WhatsApp regarding this shipment. I understand that delivery time may vary due to customs, airline, courier, or operational delays.";
+const CONSENT_POINTS = [
+  "The information I provided is accurate.",
+  "Prohibited, illegal, dangerous or restricted items are not accepted.",
+  "Hand to Hand Express may contact me by email, phone, SMS or WhatsApp about this shipment.",
+  "Delivery times may vary because of customs, airline, courier or operational delays.",
+];
 
 // 16px text stops phones zooming into fields; 44px rows are easy to tap.
 const FIELD = "h-11 rounded-md text-base md:text-sm";
@@ -109,17 +113,20 @@ function Field({ id, label, className = "", children }) {
   );
 }
 
-function ChoiceCards({ name, value, onChange, options, columns = "sm:grid-cols-2" }) {
+function ChoiceCards({ name, value, onChange, options, columns = "grid-cols-2" }) {
   return (
     <RadioGroup value={value} onValueChange={onChange} name={name} className={`grid gap-2 ${columns}`}>
-      {options.map(({ value: option, label, icon: Icon }) => (
+      {options.map(({ value: option, label, detail, icon: Icon }) => (
         <label
           key={option}
-          className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 text-sm transition-colors has-data-[state=checked]:border-brand-dark has-data-[state=checked]:bg-brand/10 dark:has-data-[state=checked]:border-brand"
+          className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-md border px-3 py-2.5 text-sm transition-colors has-data-[state=checked]:border-brand-dark has-data-[state=checked]:bg-brand/10 dark:has-data-[state=checked]:border-brand"
         >
           <RadioGroupItem value={option} />
           {Icon && <Icon className="size-4 text-brand-dark dark:text-brand" aria-hidden="true" />}
-          <span className="min-w-0">{label}</span>
+          <span className="grid min-w-0 leading-tight">
+            <span className="font-medium">{label}</span>
+            {detail && <span className="text-xs text-muted-foreground">{detail}</span>}
+          </span>
         </label>
       ))}
     </RadioGroup>
@@ -552,15 +559,21 @@ function ShipForm({ pass, onExpire }) {
           placeholder="e.g. Urgent, Fragile item"
           className="min-h-20 rounded-md text-base md:text-sm"
         />
-        <label className="flex items-start gap-3 text-sm leading-relaxed text-muted-foreground">
-          <Checkbox
-            required
-            checked={agreed}
-            onCheckedChange={(checked) => setAgreed(checked === true)}
-            className="mt-1"
-          />
-          <span>{CONSENT}</span>
-        </label>
+        <div className="grid gap-3 rounded-md border bg-muted/30 p-4">
+          <p className="text-sm font-semibold">Before you submit</p>
+          <ul className="grid gap-1.5 text-sm text-muted-foreground">
+            {CONSENT_POINTS.map((point) => (
+              <li key={point} className="flex gap-2.5">
+                <Check className="mt-0.5 size-4 shrink-0 text-brand-dark" strokeWidth={3} aria-hidden="true" />
+                {point}
+              </li>
+            ))}
+          </ul>
+          <label className="flex min-h-11 cursor-pointer items-center gap-3 border-t pt-3 text-sm font-medium">
+            <Checkbox required checked={agreed} onCheckedChange={(checked) => setAgreed(checked === true)} />
+            I understand and agree to the above
+          </label>
+        </div>
         {status.state === "error" && (
           <p role="alert" className="rounded-md bg-status-bad/10 px-3 py-2.5 text-sm text-status-bad">
             {status.message}

@@ -1,9 +1,14 @@
 import { getDb } from "@/lib/server/mongodb";
 
 // GET /api/requests: public-form requests waiting for review, oldest first.
-export async function GET() {
+export async function GET(request) {
   try {
     const db = await getDb();
+    // ?count=1: just how many are waiting, for the sidebar badge.
+    if (new URL(request.url).searchParams.has("count")) {
+      const count = await db.collection("requests").countDocuments({ status: "pending" });
+      return Response.json({ success: true, count });
+    }
     const requests = await db
       .collection("requests")
       .find({ status: "pending" }, { projection: { _id: 0, ipHash: 0, emailKey: 0 } })

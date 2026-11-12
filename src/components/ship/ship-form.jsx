@@ -178,6 +178,58 @@ function ContactFields({ prefix, emailOptional }) {
   );
 }
 
+// The form stays hidden until the visitor ticks "I'm not a robot".
+function CaptchaGate({ onPass, notice }) {
+  const box = useRef(null);
+  const widget = useRef(null);
+  const [error, setError] = useState("");
+
+  function mount() {
+    if (!box.current || widget.current !== null) return;
+    widget.current = window.grecaptcha.render(box.current, {
+      sitekey: RECAPTCHA_KEY,
+      callback: async (token) => {
+        setError("");
+        try {
+          const response = await fetch("/api/captcha", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token }),
+          });
+          const result = await response.json();
+          if (!result.success) throw new Error(result.error);
+          onPass(result.pass);
+        } catch (e) {
+          setError(e.message || "The check failed. Please try again.");
+          window.grecaptcha.reset(widget.current);
+        }
+      },
+    });
+  }
+
+  return (
+    <div className="grid gap-4 rounded-lg border bg-card p-5 shadow-xs sm:p-6">
+      <Script
+        src="https://www.google.com/recaptcha/api.js?render=explicit"
+        strategy="afterInteractive"
+        onReady={() => window.grecaptcha.ready(mount)}
+      />
+      <div>
+        <p className="text-base font-semibold">Before you start</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Please confirm you&apos;re not a robot to open the request form.
+        </p>
+      </div>
+      <div ref={box} />
+      {(error || notice) && (
+        <p className="text-sm text-status-bad" role="alert">
+          {error || notice}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ShipForm() {
   const [direction, setDirection] = useState("CAET");
   const [shipping, setShipping] = useState("normal");
@@ -187,6 +239,7 @@ export function ShipForm() {
   const [photo, setPhoto] = useState(null);
   const [agreed, setAgreed] = useState(false);
   const [status, setStatus] = useState({ state: "idle" });
+  const [pass, setPass] = useState(null);
   const nextItemId = useRef(2);
   // When the page opened: forms submitted within seconds are bots.
   const openedAt = useRef(0);
@@ -241,7 +294,7 @@ export function ShipForm() {
       startedAt: openedAt.current,
       // Hidden from people; bots fill it in.
       website: value("website"),
-      captchaToken: null,
+      captchaToken: pass,
     };
 
     if (photo) {
@@ -260,18 +313,12 @@ export function ShipForm() {
 
     setStatus({ state: "submitting" });
     try {
-      if (RECAPTCHA_KEY) {
-        data.captchaToken = await new Promise((resolve, reject) => {
-          if (!window.grecaptcha) return reject(new Error("Security check didn't load. Refresh the page and try again."));
-          window.grecaptcha.ready(() =>
-            window.grecaptcha.execute(RECAPTCHA_KEY, { action: "submit_order" }).then(resolve, reject),
-          );
-        });
-      }
       const result = await submitOrder(data);
       setStatus({ state: "done", result });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
+      // The pass lapsed: send them back to the checkbox.
+      if (/security check/i.test(error.message)) setPass(null);
       setStatus({ state: "error", message: `Something went wrong: ${error.message || error}` });
     }
   }
@@ -303,11 +350,12 @@ export function ShipForm() {
     );
   }
 
+  if (RECAPTCHA_KEY && !pass) {
+    return <CaptchaGate onPass={setPass} notice={status.state === "error" ? status.message : ""} />;
+  }
+
   return (
     <form onSubmit={submit} className="grid min-w-0 scroll-mt-20 gap-4 sm:gap-5" id="send">
-      {RECAPTCHA_KEY && (
-        <Script src={`https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_KEY}`} strategy="lazyOnload" />
-      )}
       {/* Honeypot: invisible to people, tempting to bots. */}
       <input
         type="text"

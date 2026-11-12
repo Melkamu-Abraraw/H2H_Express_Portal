@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { v2 as cloudinary } from "cloudinary";
 import { DIRECTIONS } from "@/components/admin/shipping-routes";
 import { cloudinaryConfig, PACKAGE_PHOTO_FOLDER } from "@/lib/server/cloudinary";
@@ -103,9 +103,17 @@ export function parseRequest(body) {
   };
 }
 
-async function verifyCaptcha(token) {
+const PASS_MINUTES = 30;
+
+// Google's tick token only lives two minutes, less than it takes to fill in the form. So the
+// token is checked once, when the box is ticked, and swapped for our own 30-minute pass.
+function sign(expires) {
+  return createHmac("sha256", process.env.RECAPTCHA_SECRET_KEY).update(String(expires)).digest("hex");
+}
+
+export async function issuePass(token) {
   const secret = process.env.RECAPTCHA_SECRET_KEY;
-  if (!secret) return; // Not configured (e.g. local development).
+  if (!secret) return "dev";
   if (typeof token !== "string" || !token) throw new Rejected(GENERIC);
   const response = await fetch("https://www.google.com/recaptcha/api/siteverify", {
     method: "POST",
@@ -114,9 +122,21 @@ async function verifyCaptcha(token) {
     signal: AbortSignal.timeout(8000),
   });
   const result = await response.json().catch(() => null);
-  if (!result?.success || (result.score ?? 0) < 0.5 || result.action !== "submit_order") {
-    throw new Rejected(GENERIC);
-  }
+  if (!result?.success) throw new Rejected(GENERIC);
+  const expires = Date.now() + PASS_MINUTES * 60 * 1000;
+  return `${expires}.${sign(expires)}`;
+}
+
+function checkPass(pass) {
+  if (!process.env.RECAPTCHA_SECRET_KEY) return; // Not configured (e.g. local development).
+  const [expires, signature = ""] = String(pass ?? "").split(".");
+  const expected = Buffer.from(sign(expires));
+  const given = Buffer.from(signature.length ? `${signature}` : "");
+  const valid =
+    Number(expires) > Date.now() &&
+    given.length === expected.length &&
+    timingSafeEqual(given, expected);
+  if (!valid) throw new Rejected("Security check expired. Please tick the box again.", 403);
 }
 
 async function uploadPhoto(base64) {
@@ -141,7 +161,7 @@ export async function createRequest(db, body, ip) {
   const started = Number(body.startedAt);
   if (!Number.isFinite(started) || Date.now() - started < MIN_FILL_MS) return { fake: true };
 
-  await verifyCaptcha(body.captchaToken);
+  checkPass(body.captchaToken);
   const input = parseRequest(body);
 
   const ipHash = createHash("sha256").update(String(ip)).digest("hex").slice(0, 24);

@@ -378,27 +378,20 @@ function ShipForm({ pass, onExpire }) {
         defaultValue=""
       />
       <Section number="01" title="Shipment Details">
-        <div className="grid gap-1.5">
-          <p className="text-sm text-muted-foreground" id="direction-label">
-            Direction
-          </p>
-          <RadioGroup
-            value={direction}
-            onValueChange={changeDirection}
-            aria-labelledby="direction-label"
-            className="grid gap-2 sm:grid-cols-3"
-          >
-            {Object.entries(DIRECTIONS).map(([code, { from, to }]) => (
-              <label
-                key={code}
-                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 text-sm transition-colors has-data-[state=checked]:border-brand-dark has-data-[state=checked]:bg-brand/10 dark:has-data-[state=checked]:border-brand"
-              >
-                <RadioGroupItem value={code} />
-                <RouteLabel from={from} to={to} />
-              </label>
-            ))}
-          </RadioGroup>
-        </div>
+        <Field id="direction" label="Direction">
+          <Select value={direction} onValueChange={changeDirection}>
+            <SelectTrigger id="direction" className="h-11! w-full min-w-0 rounded-md text-left">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(DIRECTIONS).map(([code, { from, to }]) => (
+                <SelectItem key={code} value={code}>
+                  <RouteLabel from={from} to={to} />
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
 
         <div className="grid gap-1.5">
           <p className="text-sm text-muted-foreground">Shipping option</p>

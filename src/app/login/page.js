@@ -2,6 +2,7 @@ import Image from "next/image";
 import CA from "country-flag-icons/react/3x2/CA";
 import ET from "country-flag-icons/react/3x2/ET";
 import UG from "country-flag-icons/react/3x2/UG";
+import { ArrowLeftRight, ArrowRight } from "lucide-react";
 import { LoginForm } from "@/components/auth/login-form";
 
 export const metadata = {
@@ -12,10 +13,10 @@ export const metadata = {
 // TODO: replace with the real support WhatsApp number (digits only, with country code).
 const SUPPORT_WHATSAPP = "https://wa.me/10000000000";
 
-const COUNTRIES = [
-  ["Canada", CA],
-  ["Ethiopia", ET],
-  ["Uganda", UG],
+// Canada and Ethiopia ship both ways; Uganda is one way from Canada.
+const ROUTES = [
+  ["Canada and Ethiopia, both ways", CA, ET, ArrowLeftRight],
+  ["Canada to Uganda", CA, UG, ArrowRight],
 ];
 
 export default function LoginPage() {
@@ -85,13 +86,14 @@ export default function LoginPage() {
             Every package, <span className="text-brand">in safe hands</span>
           </h2>
           <p className="mt-3 max-w-md text-sm text-white/85 2xl:text-base">
-            From drop-off to doorstep, register parcels, record payments and keep customers updated on every shipment.
+            From drop-off to delivery, manage shipments, payments, and customer updates all in one place.
           </p>
-          <ul className="mt-5 inline-flex flex-wrap items-center gap-x-5 gap-y-2 rounded-md border border-white/25 bg-white/10 px-5 py-2.5 backdrop-blur-sm">
-            {COUNTRIES.map(([name, Flag]) => (
-              <li key={name} className="flex items-center gap-2 text-sm font-medium">
-                <Flag className="h-3 w-[18px] rounded-[2px]" aria-hidden="true" />
-                {name}
+          <ul className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
+            {ROUTES.map(([label, From, To, Arrow]) => (
+              <li key={label} className="flex items-center gap-2" role="img" aria-label={label}>
+                <From className="h-3 w-[18px] rounded-[2px]" aria-hidden="true" />
+                <Arrow className="size-3.5 text-white/70" aria-hidden="true" />
+                <To className="h-3 w-[18px] rounded-[2px]" aria-hidden="true" />
               </li>
             ))}
           </ul>

@@ -18,9 +18,6 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-// Ethiopia → Canada packages are always filled in at the Addis Ababa office.
-const ALLOW_REMOTE = { CAET: true, CAUG: true, ETCA: false };
-
 const RECAPTCHA_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
 
 const SHIPPING = [
@@ -28,10 +25,6 @@ const SHIPPING = [
   { value: "express", label: "🚨 Express — about 4 days" },
 ];
 
-const METHODS = [
-  { value: "remote", label: "I'm filling this out now — will drop off later" },
-  { value: "office", label: "I'm at the branch, dropping off right now" },
-];
 
 const CONSENT =
   "I confirm that the information provided is accurate. I understand that prohibited, illegal, dangerous, or restricted items are not accepted. I agree that Hand to Hand Express may contact me by email, phone, SMS, or WhatsApp regarding this shipment. I understand that delivery time may vary due to customs, airline, courier, or operational delays.";
@@ -85,21 +78,6 @@ async function submitOrder(data) {
   }
   if (!result.success) throw new Error(result.error || "Submission failed");
   return result;
-}
-
-export function RequestDeliveryButton() {
-  return (
-    <Button asChild className={`${DARK_BUTTON} h-9 px-3.5`}>
-      <a href="#send">
-        Request Delivery
-        <ArrowRight
-          className="size-4 text-brand transition-transform group-hover:translate-x-0.5 dark:text-brand-dark"
-          strokeWidth={2.5}
-          aria-hidden="true"
-        />
-      </a>
-    </Button>
-  );
 }
 
 function Section({ number, title, children }) {
@@ -230,8 +208,8 @@ function CaptchaGate({ onPass, notice }) {
   );
 }
 
-// Until the box is ticked, the page shows only the check; the form and the side panels appear after.
-export function ShipExperience({ intro, aside }) {
+// Until the box is ticked, the page shows only the check; the form appears after.
+export function ShipExperience({ intro }) {
   const [pass, setPass] = useState(null);
   const [notice, setNotice] = useState("");
 
@@ -245,16 +223,13 @@ export function ShipExperience({ intro, aside }) {
   return (
     <>
       {intro}
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-6">
-        <ShipForm
-          pass={pass}
-          onExpire={(message) => {
-            setNotice(message);
-            setPass(null);
-          }}
-        />
-        {aside}
-      </div>
+      <ShipForm
+        pass={pass}
+        onExpire={(message) => {
+          setNotice(message);
+          setPass(null);
+        }}
+      />
     </>
   );
 }
@@ -262,7 +237,6 @@ export function ShipExperience({ intro, aside }) {
 function ShipForm({ pass, onExpire }) {
   const [direction, setDirection] = useState("CAET");
   const [shipping, setShipping] = useState("normal");
-  const [method, setMethod] = useState("remote");
   const [branchCode, setBranchCode] = useState(DIRECTIONS.CAET.defaultBranch);
   const [items, setItems] = useState([{ id: 1, desc: "", qty: "1", kg: "" }]);
   const [photo, setPhoto] = useState(null);
@@ -277,8 +251,6 @@ function ShipForm({ pass, onExpire }) {
 
   const route = DIRECTIONS[direction];
   const branches = Object.entries(route.branches);
-  const remoteAllowed = ALLOW_REMOTE[direction];
-  const currentMethod = remoteAllowed ? method : "office";
   const branch = route.branches[branchCode] ?? route.branches[route.defaultBranch];
   const totalKg = items.reduce((sum, item) => sum + (Number.parseFloat(item.kg) || 0), 0);
   const busy = status.state === "processing" || status.state === "submitting";
@@ -305,7 +277,7 @@ function ShipForm({ pass, onExpire }) {
     const data = {
       direction,
       branchCode: branches.length > 1 ? branchCode : branches[0][0],
-      submissionMethod: currentMethod,
+      submissionMethod: "remote",
       shippingMethod: shipping,
       senderName: value("senderName"),
       senderEmail: value("senderEmail"),
@@ -418,13 +390,6 @@ function ShipForm({ pass, onExpire }) {
           <ChoiceCards name="shippingMethod" value={shipping} onChange={setShipping} options={SHIPPING} />
         </div>
 
-        {remoteAllowed && (
-          <div className="grid gap-1.5">
-            <p className="text-sm text-muted-foreground">How are you submitting this?</p>
-            <ChoiceCards name="submissionMethod" value={method} onChange={setMethod} options={METHODS} />
-          </div>
-        )}
-
         {branches.length > 1 ? (
           <Field id="branchCode" label="Drop-off branch">
             <Select value={branchCode} onValueChange={setBranchCode}>
@@ -457,13 +422,10 @@ function ShipForm({ pass, onExpire }) {
           <MapPin className="mt-0.5 size-4 shrink-0 text-brand-dark dark:text-brand" aria-hidden="true" />
           <p>
             <strong className="block font-semibold">
-              {currentMethod === "office" ? "Filling out at: " : "Drop-off: "}
-              {branch.name}
+              Drop-off: {branch.name}
             </strong>
             <span className="text-muted-foreground">{branch.address}.</span>{" "}
-            {currentMethod === "office"
-              ? "The item will be marked as dropped off as soon as you submit."
-              : "Please bring your item here. Your tracking ID will be used to identify your package."}
+            Please bring your item here. Our team will check it and register it when you arrive.
           </p>
         </div>
       </Section>

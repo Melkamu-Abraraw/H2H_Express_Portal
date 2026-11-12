@@ -147,15 +147,29 @@ export async function GET() {
 // POST /api/packages: registers a package at the branch and records its payment.
 export async function POST(request) {
   let input;
+  let body;
   try {
-    input = parsePackage(await request.json());
+    body = await request.json();
+    input = parsePackage(body);
   } catch (error) {
     const message = error instanceof InvalidRequest ? error.message : "Request body isn't valid JSON";
     return Response.json({ success: false, error: message }, { status: 400 });
   }
 
+  const requestCode = typeof body?.requestCode === "string" ? body.requestCode : "";
+  let claimed = false;
   try {
     const db = await getDb();
+    // Registering a public request: claim it first so two staff can't register it twice.
+    if (requestCode) {
+      const claim = await db
+        .collection("requests")
+        .updateOne({ code: requestCode, status: "pending" }, { $set: { status: "registering" } });
+      if (!claim.matchedCount) {
+        return Response.json({ success: false, error: "That request was already handled" }, { status: 409 });
+      }
+      claimed = true;
+    }
     const now = new Date();
     const [packageSeq, receiptSeq] = await Promise.all([
       nextSequence(db, "package"),
@@ -183,6 +197,11 @@ export async function POST(request) {
       createdAt: now,
     };
     await db.collection("packages").insertOne(pkg);
+    if (claimed) {
+      await db
+        .collection("requests")
+        .updateOne({ code: requestCode }, { $set: { status: "approved", tracking, reviewedAt: now } });
+    }
 
     // The receipt is always issued; the payments ledger only lists money actually taken.
     if (input.amountPaid > 0) await db.collection("payments").insertOne({
@@ -217,6 +236,9 @@ export async function POST(request) {
     );
   } catch (error) {
     console.error("Saving package failed", error);
+    if (claimed) {
+      await (await getDb()).collection("requests").updateOne({ code: requestCode, status: "registering" }, { $set: { status: "pending" } }).catch(() => {});
+    }
     return Response.json(
       { success: false, error: "Couldn't save the package. Please try again." },
       { status: 500 },

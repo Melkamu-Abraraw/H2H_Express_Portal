@@ -2,6 +2,7 @@ import {
   CreditCard,
   FileText,
   House,
+  Inbox,
   MapPin,
   Package,
   Settings,
@@ -24,6 +25,7 @@ export const mainNav = [
       })),
     ],
   },
+  { label: "Requests", href: "/admin/requests", icon: Inbox },
   { label: "Customers", href: "/admin/customers", icon: Users },
   // { label: "Manifests", href: "/admin/manifests", icon: FileText },
   {

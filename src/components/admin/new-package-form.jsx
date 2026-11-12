@@ -172,13 +172,27 @@ function SummaryRow({ label, children }) {
 export function NewPackageForm({ prefill = null }) {
   const initialDirection = prefill?.direction ?? "CAET";
   const [direction, setDirection] = useState(initialDirection);
-  const [shipping, setShipping] = useState("normal");
+  const [shipping, setShipping] = useState(prefill?.shipping ?? "normal");
   // Routes added later aren't in DIRECTIONS; the active-branch fallback below picks one.
-  const [branchCode, setBranchCode] = useState(DIRECTIONS[initialDirection]?.defaultBranch ?? "");
+  const [branchCode, setBranchCode] = useState(
+    prefill?.branchCode ?? DIRECTIONS[initialDirection]?.defaultBranch ?? "",
+  );
   const savedReceivers = prefill?.savedReceivers ?? [];
   const [receiverChoice, setReceiverChoice] = useState(prefill?.receiverName ?? NEW_RECEIVER);
   const receiver = savedReceivers.find((saved) => saved.name === receiverChoice) ?? null;
-  const [items, setItems] = useState([{ id: 1, description: "", qty: "1", kg: "" }]);
+  // A request from the public page arrives with its items; staff correct the weights here.
+  const [items, setItems] = useState(
+    prefill?.items?.length
+      ? prefill.items.map((item, index) => ({
+          id: index + 1,
+          description: item.description,
+          qty: String(item.qty),
+          kg: String(item.kg),
+        }))
+      : [{ id: 1, description: "", qty: "1", kg: "" }],
+  );
+  // Photos the customer already uploaded with their request.
+  const [customerPhotos, setCustomerPhotos] = useState(prefill?.photos ?? []);
   const [photos, setPhotos] = useState([]);
   const [submitted, setSubmitted] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("cash");
@@ -343,7 +357,8 @@ export function NewPackageForm({ prefill = null }) {
           receiver: receiverDetails,
           items: packageItems,
           notes: value("notes"),
-          photos: uploaded,
+          photos: [...customerPhotos, ...uploaded],
+          ...(prefill?.requestCode && { requestCode: prefill.requestCode }),
           currency,
           payment: { charge, paid, method: paymentMethod, cashier },
         }),
@@ -402,6 +417,15 @@ export function NewPackageForm({ prefill = null }) {
 
   return (
     <div className="grid gap-4">
+      {prefill?.requestCode && (
+        <Alert>
+          <AlertTitle>Reviewing request {prefill.requestCode}</AlertTitle>
+          <AlertDescription>
+            Weigh and inspect the package, then correct the items and weights below before
+            registering. The customer gets their tracking number only after you register it.
+          </AlertDescription>
+        </Alert>
+      )}
       <RegistrationSteps steps={steps} />
       <PackageReceiptDialog
         receipt={receipt}
@@ -478,10 +502,14 @@ export function NewPackageForm({ prefill = null }) {
             step="02"
             title="Sender"
             description={
-              prefill ? "Filled in from the customer record." : "Who is sending this package?"
+              prefill?.requestCode
+                ? "Filled in by the customer. Check it against their ID."
+                : prefill
+                  ? "Filled in from the customer record."
+                  : "Who is sending this package?"
             }
           >
-            {prefill && (
+            {prefill?.customerId && (
               <ExistingCustomerNote customerId={prefill.customerId} name={prefill.sender.name} />
             )}
             <div className="grid gap-4 sm:grid-cols-2">
@@ -585,6 +613,28 @@ export function NewPackageForm({ prefill = null }) {
             </p>
 
             <Separator />
+
+            {customerPhotos.length > 0 && (
+              <div className="grid gap-1.5">
+                <Label>Photos from the customer</Label>
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                  {customerPhotos.map((photo, index) => (
+                    <div key={photo.url} className="relative aspect-square overflow-hidden rounded-lg border">
+                      <Image src={photo.url} alt={`Customer photo ${index + 1}`} fill unoptimized className="object-cover" />
+                      <Button
+                        type="button"
+                        size="icon"
+                        aria-label={`Remove customer photo ${index + 1}`}
+                        className="absolute top-1 right-1 size-6 bg-black/70 text-white hover:bg-black"
+                        onClick={() => setCustomerPhotos((current) => current.filter((item) => item.url !== photo.url))}
+                      >
+                        <X />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="grid gap-1.5">
               <Label htmlFor="photo">Photos of items (optional)</Label>
@@ -706,6 +756,7 @@ export function NewPackageForm({ prefill = null }) {
           >
             <Textarea
               name="notes"
+              defaultValue={prefill?.notes}
               aria-label="Notes"
               placeholder="e.g. Urgent, Fragile item"
               rows={3}

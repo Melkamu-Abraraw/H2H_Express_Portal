@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import Script from "next/script";
 import { ArrowRight, Check, ImagePlus, MapPin, Plus, X } from "lucide-react";
 import { DIRECTIONS, RouteLabel } from "@/components/admin/shipping-routes";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,8 @@ import { Textarea } from "@/components/ui/textarea";
 
 // Ethiopia → Canada packages are always filled in at the Addis Ababa office.
 const ALLOW_REMOTE = { CAET: true, CAUG: true, ETCA: false };
+
+const RECAPTCHA_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
 
 const SHIPPING = [
   { value: "normal", label: "Normal — about 8 days" },
@@ -186,6 +188,11 @@ export function ShipForm() {
   const [agreed, setAgreed] = useState(false);
   const [status, setStatus] = useState({ state: "idle" });
   const nextItemId = useRef(2);
+  // When the page opened: forms submitted within seconds are bots.
+  const openedAt = useRef(0);
+  useEffect(() => {
+    openedAt.current = Date.now();
+  }, []);
 
   const route = DIRECTIONS[direction];
   const branches = Object.entries(route.branches);
@@ -231,6 +238,10 @@ export function ShipForm() {
       items: items.map(({ desc, qty, kg }) => ({ desc, qty, kg })),
       photoBase64: null,
       photoMimeType: null,
+      startedAt: openedAt.current,
+      // Hidden from people; bots fill it in.
+      website: value("website"),
+      captchaToken: null,
     };
 
     if (photo) {
@@ -249,6 +260,14 @@ export function ShipForm() {
 
     setStatus({ state: "submitting" });
     try {
+      if (RECAPTCHA_KEY) {
+        data.captchaToken = await new Promise((resolve, reject) => {
+          if (!window.grecaptcha) return reject(new Error("Security check didn't load. Refresh the page and try again."));
+          window.grecaptcha.ready(() =>
+            window.grecaptcha.execute(RECAPTCHA_KEY, { action: "submit_order" }).then(resolve, reject),
+          );
+        });
+      }
       const result = await submitOrder(data);
       setStatus({ state: "done", result });
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -258,37 +277,47 @@ export function ShipForm() {
   }
 
   if (status.state === "done") {
-    const { trackingId, office, status: packageStatus } = status.result;
+    const { trackingId, office } = status.result;
     return (
       <div className="grid gap-4 rounded-lg border bg-card p-5 shadow-xs sm:p-6" role="status">
         <span className="grid size-10 place-items-center rounded-full bg-status-good/12 text-status-good">
           <Check className="size-5" strokeWidth={3} aria-hidden="true" />
         </span>
         <div>
-          <p className="text-sm text-muted-foreground">Request submitted · Your tracking ID</p>
+          <p className="text-sm text-muted-foreground">Request received · Reference</p>
           <p className="mt-1 font-mono text-2xl font-semibold tracking-tight text-brand-dark dark:text-brand">
             {trackingId}
           </p>
+          <p className="mt-3 text-sm">
+            Thanks! Our team will check your details when you bring the package in. The weight and
+            price are confirmed at the office, and you&apos;ll get your tracking number by email once
+            it&apos;s registered.
+          </p>
           {office && (
             <p className="mt-2 text-sm">
-              {packageStatus === "Dropped Off"
-                ? `Marked as dropped off at ${office.name} — ${office.address}`
-                : `Drop off at ${office.name} — ${office.address}`}
+              Drop off at {office.name} — {office.address}
             </p>
           )}
         </div>
-        <Button asChild className={`${DARK_BUTTON} h-11 justify-self-start px-5`}>
-          <Link href={`/track/${trackingId}`}>
-            Track this package
-            <ArrowRight className="size-4 text-brand dark:text-brand-dark" strokeWidth={2.5} aria-hidden="true" />
-          </Link>
-        </Button>
       </div>
     );
   }
 
   return (
     <form onSubmit={submit} className="grid min-w-0 scroll-mt-20 gap-4 sm:gap-5" id="send">
+      {RECAPTCHA_KEY && (
+        <Script src={`https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_KEY}`} strategy="lazyOnload" />
+      )}
+      {/* Honeypot: invisible to people, tempting to bots. */}
+      <input
+        type="text"
+        name="website"
+        tabIndex={-1}
+        autoComplete="off"
+        aria-hidden="true"
+        className="absolute -left-[9999px] h-0 w-0 opacity-0"
+        defaultValue=""
+      />
       <Section number="01" title="Shipment Details">
         <div className="grid gap-1.5">
           <p className="text-sm text-muted-foreground" id="direction-label">

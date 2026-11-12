@@ -8,7 +8,11 @@ import { ChevronRight, Plus } from "lucide-react";
 import { manageNav, mainNav } from "@/components/admin/nav-items";
 import { CURRENT_USER } from "@/components/admin/current-user";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Sidebar,
   SidebarContent,
@@ -35,7 +39,9 @@ const badgeTones = {
 };
 
 function isInSection(pathname, href) {
-  return pathname === href || (href !== "/admin" && pathname.startsWith(`${href}/`));
+  return (
+    pathname === href || (href !== "/admin" && pathname.startsWith(`${href}/`))
+  );
 }
 
 function NavButton({ item: { label, href, icon: Icon, badge }, pathname }) {
@@ -51,9 +57,15 @@ function NavButton({ item: { label, href, icon: Icon, badge }, pathname }) {
         <span>{label}</span>
         {badge && (
           <span
-            className={`inline-flex -translate-y-1 items-center gap-px rounded-full px-1.5 py-0.5 font-mono ${badge.plus ? "text-[8px]" : "text-[11px]"} leading-none font-bold group-data-[collapsible=icon]:hidden ${badgeTones[badge.tone]}`}
+            className={`inline-flex -translate-y-1 items-center gap-px rounded-full px-1.5 py-0.5 font-mono ${badge.plus ? "text-[11px]" : "text-[14px]"} leading-none font-bold group-data-[collapsible=icon]:hidden ${badgeTones[badge.tone]}`}
           >
-            {badge.plus && <Plus className="size-[11px]" strokeWidth={3.5} aria-hidden="true" />}
+            {badge.plus && (
+              <Plus
+                className="size-[8px]"
+                strokeWidth={3.5}
+                aria-hidden="true"
+              />
+            )}
             {badge.count}
           </span>
         )}
@@ -125,11 +137,16 @@ function usePendingRequests(pathname) {
     function load() {
       fetch("/api/requests?count=1", { cache: "no-store" })
         .then((response) => response.json())
-        .then((result) => !cancelled && result.success && setCount(result.count))
+        .then(
+          (result) => !cancelled && result.success && setCount(result.count),
+        )
         .catch(() => {});
     }
     load();
-    const timer = setInterval(() => document.visibilityState === "visible" && load(), 15000);
+    const timer = setInterval(
+      () => document.visibilityState === "visible" && load(),
+      15000,
+    );
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -171,7 +188,9 @@ export function AppSidebar() {
             <span className="truncate text-sm font-semibold text-foreground">
               <span className="text-brand">H2H</span> Express
             </span>
-            <span className="truncate text-xs text-muted-foreground">Delivery</span>
+            <span className="truncate text-xs text-muted-foreground">
+              Delivery
+            </span>
           </div>
         </div>
       </SidebarHeader>
@@ -210,11 +229,17 @@ export function AppSidebar() {
             <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/35 to-transparent" />
           </div>
           <Avatar className="size-8">
-            <AvatarFallback className="text-xs font-medium">{CURRENT_USER.initials}</AvatarFallback>
+            <AvatarFallback className="text-xs font-medium">
+              {CURRENT_USER.initials}
+            </AvatarFallback>
           </Avatar>
           <div className="grid leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="truncate text-sm font-medium text-white">{CURRENT_USER.name}</span>
-            <span className="truncate text-xs text-white/85">{CURRENT_USER.title}</span>
+            <span className="truncate text-sm font-medium text-white">
+              {CURRENT_USER.name}
+            </span>
+            <span className="truncate text-xs text-white/85">
+              {CURRENT_USER.title}
+            </span>
           </div>
         </div>
       </SidebarFooter>

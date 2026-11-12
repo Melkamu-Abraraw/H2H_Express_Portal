@@ -530,13 +530,13 @@ function ShipForm({ pass, onExpire }) {
             />
           </label>
           {photoUrl && (
-            <div className="relative mt-1 aspect-4/3 w-full max-w-xs overflow-hidden rounded-md border">
+            <div className="relative mt-1 size-24 overflow-hidden rounded-md border">
               <Image src={photoUrl} alt="Preview of the chosen photo" fill unoptimized className="object-cover" />
               <Button
                 type="button"
                 size="icon"
                 aria-label="Remove photo"
-                className="absolute top-1.5 right-1.5 size-7 bg-black/70 text-white hover:bg-black"
+                className="absolute top-1 right-1 size-5 bg-black/70 text-white hover:bg-black"
                 onClick={() => choosePhoto(null)}
               >
                 <X />

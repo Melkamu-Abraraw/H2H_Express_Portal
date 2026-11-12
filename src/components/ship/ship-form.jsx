@@ -6,6 +6,7 @@ import Script from "next/script";
 import { ArrowRight, Check, ImagePlus, MapPin, Plus, X } from "lucide-react";
 import { DIRECTIONS, RouteLabel } from "@/components/admin/shipping-routes";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 
 const RECAPTCHA_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
@@ -81,18 +83,20 @@ async function submitOrder(data) {
   return result;
 }
 
-function Section({ number, title, children }) {
+function Section({ number, title, description, children }) {
   return (
-    // min-w-0: fieldsets otherwise refuse to shrink below their content and overflow on phones.
-    <fieldset className="grid min-w-0 gap-4 rounded-lg border bg-card p-4 shadow-xs sm:p-6">
-      <legend className="float-left mb-1 flex w-full items-baseline gap-3">
-        <span className="font-mono text-sm font-semibold text-brand-dark dark:text-brand">
+    <Card className="min-w-0">
+      <CardHeader className="flex flex-row items-center gap-3">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand font-mono text-xs font-bold text-black">
           {number}
         </span>
-        <span className="text-base font-semibold">{title}</span>
-      </legend>
-      {children}
-    </fieldset>
+        <div className="grid gap-0.5">
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4">{children}</CardContent>
+    </Card>
   );
 }
 
@@ -377,7 +381,7 @@ function ShipForm({ pass, onExpire }) {
         className="absolute -left-[9999px] h-0 w-0 opacity-0"
         defaultValue=""
       />
-      <Section number="01" title="Shipment Details">
+      <Section number="01" title="Package details" description="Choose the route, speed and drop-off point.">
         <Field id="direction" label="Direction">
           <Select value={direction} onValueChange={changeDirection}>
             <SelectTrigger id="direction" className="h-11! w-full min-w-0 rounded-md text-left">
@@ -438,76 +442,75 @@ function ShipForm({ pass, onExpire }) {
         </div>
       </Section>
 
-      <Section number="02" title="Sender">
+      <Section number="02" title="Sender" description="Who is sending this package?">
         <ContactFields prefix="sender" />
       </Section>
 
-      <Section number="03" title="Items to send">
-        <ul className="grid gap-3">
-          {items.map((item) => (
-            <li
+      <Section number="03" title="Items to send" description="List everything in this package.">
+        <div className="grid gap-2">
+          <div className="grid grid-cols-[minmax(0,1fr)_4rem_4.5rem_2.25rem] gap-2 text-sm font-medium">
+            <span>Description</span>
+            <span>Qty</span>
+            <span>KG</span>
+          </div>
+          {items.map((item, index) => (
+            <div
               key={item.id}
-              className="grid grid-cols-[minmax(0,1fr)_4.5rem_5rem_auto] items-end gap-2 max-sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] max-sm:rounded-md max-sm:border max-sm:p-3"
+              className="grid grid-cols-[minmax(0,1fr)_4rem_4.5rem_2.25rem] items-center gap-2"
             >
-              <Field id={`item-desc-${item.id}`} label="Description" className="max-sm:col-span-3">
-                <Input
-                  id={`item-desc-${item.id}`}
-                  required
-                  placeholder="e.g. Clothes"
-                  className={FIELD}
-                  value={item.desc}
-                  onChange={(event) => updateItem(item.id, "desc", event.target.value)}
-                />
-              </Field>
-              <Field id={`item-qty-${item.id}`} label="Qty" className="max-sm:col-start-1 max-sm:row-start-2">
-                <Input
-                  id={`item-qty-${item.id}`}
-                  required
-                  type="number"
-                  inputMode="numeric"
-                  min="1"
-                  className={`${FIELD} font-mono`}
-                  value={item.qty}
-                  onChange={(event) => updateItem(item.id, "qty", event.target.value)}
-                />
-              </Field>
-              <Field id={`item-kg-${item.id}`} label="KG" className="max-sm:col-start-2 max-sm:row-start-2">
-                <Input
-                  id={`item-kg-${item.id}`}
-                  required
-                  type="number"
-                  inputMode="decimal"
-                  step="0.1"
-                  min="0.1"
-                  className={`${FIELD} font-mono`}
-                  value={item.kg}
-                  onChange={(event) => updateItem(item.id, "kg", event.target.value)}
-                />
-              </Field>
+              <Input
+                aria-label={`Item ${index + 1} description`}
+                required
+                placeholder="e.g. Clothes"
+                autoComplete="off"
+                value={item.desc}
+                onChange={(event) => updateItem(item.id, "desc", event.target.value)}
+              />
+              <Input
+                aria-label={`Item ${index + 1} quantity`}
+                required
+                type="number"
+                inputMode="numeric"
+                min="1"
+                className="font-mono"
+                value={item.qty}
+                onChange={(event) => updateItem(item.id, "qty", event.target.value)}
+              />
+              <Input
+                aria-label={`Item ${index + 1} weight in kilograms`}
+                required
+                type="number"
+                inputMode="decimal"
+                step="0.1"
+                min="0.1"
+                className="font-mono"
+                value={item.kg}
+                onChange={(event) => updateItem(item.id, "kg", event.target.value)}
+              />
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="size-11 text-muted-foreground max-sm:col-start-3 max-sm:row-start-2"
-                title="Remove item"
-                aria-label="Remove item"
+                aria-label={`Remove item ${index + 1}`}
                 disabled={items.length === 1}
                 onClick={() => setItems((current) => current.filter((row) => row.id !== item.id))}
               >
-                <X aria-hidden="true" />
+                <X />
               </Button>
-            </li>
+            </div>
           ))}
-        </ul>
-        <div className="flex items-center justify-between gap-3">
-          <Button type="button" variant="outline" className="h-10 rounded-md" onClick={addItem}>
-            <Plus className="text-brand-dark dark:text-brand" aria-hidden="true" />
-            Add another item
-          </Button>
-          <p className="text-sm font-semibold" role="status">
-            Total: <span className="font-mono">{totalKg.toFixed(1)}</span> kg
-          </p>
         </div>
+
+        <Button type="button" variant="outline" className="border-dashed" onClick={addItem}>
+          <Plus /> Add another item
+        </Button>
+
+        <p className="text-right text-sm text-muted-foreground" role="status">
+          Total: <span className="font-mono font-semibold text-foreground">{totalKg.toFixed(1)}</span> kg
+        </p>
+
+        <Separator />
+
         <div className="grid gap-1.5">
           <p className="text-sm text-muted-foreground">Photo of item (optional)</p>
           <label className="flex min-h-14 cursor-pointer items-center gap-3 rounded-md border border-dashed px-3 py-3 text-sm transition-colors hover:bg-muted/50 focus-within:ring-3 focus-within:ring-ring/50">
@@ -539,11 +542,11 @@ function ShipForm({ pass, onExpire }) {
         </div>
       </Section>
 
-      <Section number="04" title="Receiver">
+      <Section number="04" title="Receiver" description="Who will collect this package?">
         <ContactFields prefix="receiver" emailOptional />
       </Section>
 
-      <Section number="05" title="Notes (optional)">
+      <Section number="05" title="Notes" description="Optional details for the team.">
         <Textarea
           name="notes"
           rows={2}

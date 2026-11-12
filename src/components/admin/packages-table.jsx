@@ -9,7 +9,7 @@ import { DateRangePicker, useToday } from "@/components/admin/date-range-picker"
 import { PackageRowActions } from "@/components/admin/package-row-actions";
 import { PaymentCell } from "@/components/admin/payment-cell";
 import { blockedByPayment } from "@/components/admin/package-payments";
-import { canMoveTo } from "@/components/admin/package-tracking";
+import { canMoveTo, trackingSteps } from "@/components/admin/package-tracking";
 import { PackageStats } from "@/components/admin/package-stats";
 import { useSettings } from "@/components/admin/settings-store";
 import { statusDots } from "@/components/admin/package-views";
@@ -338,6 +338,10 @@ export function PackagesTable({ status }) {
                       />
                       {item.status}
                     </Badge>
+                    {/* "In transit" covers several steps, so say which one the package is at. */}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {trackingSteps(item.route).find((step) => step.key === item.events.at(-1).step)?.label}
+                    </p>
                   </TableCell>
                   <TableCell>
                     <PaymentCell pkg={item} />

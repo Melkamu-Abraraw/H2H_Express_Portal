@@ -563,9 +563,12 @@ function ShipForm({ pass, onExpire }) {
           <p className="text-sm font-semibold">Before you submit</p>
           <ul className="grid gap-1.5 text-sm text-muted-foreground">
             {CONSENT_POINTS.map((point) => (
-              <li key={point} className="flex gap-2.5">
-                <Check className="mt-0.5 size-4 shrink-0 text-brand-dark" strokeWidth={3} aria-hidden="true" />
-                {point}
+              <li key={point} className="flex gap-2.5 leading-5">
+                {/* Same height as one line of text, so the tick sits level with the first line. */}
+                <span className="grid h-5 w-4 shrink-0 place-items-center">
+                  <Check className="size-3.5 text-brand-dark" strokeWidth={3} aria-hidden="true" />
+                </span>
+                <span>{point}</span>
               </li>
             ))}
           </ul>

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 import { manageNav, mainNav } from "@/components/admin/nav-items";
 import { CURRENT_USER } from "@/components/admin/current-user";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -28,8 +28,10 @@ import {
 } from "@/components/ui/sidebar";
 
 const badgeTones = {
-  brand: "text-brand-dark dark:text-brand",
-  alert: "text-red-700 dark:text-red-500",
+  brand: "bg-foreground/10 text-brand-dark dark:text-brand",
+  alert: "bg-foreground/10 text-red-700 dark:text-red-500",
+  // Solid golden yellow, for things waiting for staff.
+  new: "bg-brand text-black",
 };
 
 function isInSection(pathname, href) {
@@ -49,8 +51,9 @@ function NavButton({ item: { label, href, icon: Icon, badge }, pathname }) {
         <span>{label}</span>
         {badge && (
           <span
-            className={`-translate-y-1 rounded-full bg-foreground/10 px-1.5 py-0.5 font-mono text-[11px] leading-none font-bold group-data-[collapsible=icon]:hidden ${badgeTones[badge.tone]}`}
+            className={`inline-flex -translate-y-1 items-center gap-0.5 rounded-full px-1.5 py-0.5 font-mono text-[11px] leading-none font-bold group-data-[collapsible=icon]:hidden ${badgeTones[badge.tone]}`}
           >
+            {badge.plus && <Plus className="size-2.5" strokeWidth={3.5} aria-hidden="true" />}
             {badge.count}
           </span>
         )}
@@ -140,7 +143,7 @@ export function AppSidebar() {
   const pending = usePendingRequests(pathname);
   const main = mainNav.map((item) =>
     item.href === "/admin/requests" && pending > 0
-      ? { ...item, badge: { count: pending, tone: "alert" } }
+      ? { ...item, badge: { count: pending, tone: "new", plus: true } }
       : item,
   );
 

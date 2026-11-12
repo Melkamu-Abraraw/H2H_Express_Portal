@@ -230,7 +230,36 @@ function CaptchaGate({ onPass, notice }) {
   );
 }
 
-export function ShipForm() {
+// Until the box is ticked, the page shows only the check; the form and the side panels appear after.
+export function ShipExperience({ intro, aside }) {
+  const [pass, setPass] = useState(null);
+  const [notice, setNotice] = useState("");
+
+  if (RECAPTCHA_KEY && !pass) {
+    return (
+      <div className="mx-auto w-full max-w-md self-center py-6 sm:py-16">
+        <CaptchaGate onPass={setPass} notice={notice} />
+      </div>
+    );
+  }
+  return (
+    <>
+      {intro}
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-6">
+        <ShipForm
+          pass={pass}
+          onExpire={(message) => {
+            setNotice(message);
+            setPass(null);
+          }}
+        />
+        {aside}
+      </div>
+    </>
+  );
+}
+
+function ShipForm({ pass, onExpire }) {
   const [direction, setDirection] = useState("CAET");
   const [shipping, setShipping] = useState("normal");
   const [method, setMethod] = useState("remote");
@@ -239,7 +268,6 @@ export function ShipForm() {
   const [photo, setPhoto] = useState(null);
   const [agreed, setAgreed] = useState(false);
   const [status, setStatus] = useState({ state: "idle" });
-  const [pass, setPass] = useState(null);
   const nextItemId = useRef(2);
   // When the page opened: forms submitted within seconds are bots.
   const openedAt = useRef(0);
@@ -318,7 +346,7 @@ export function ShipForm() {
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
       // The pass lapsed: send them back to the checkbox.
-      if (/security check/i.test(error.message)) setPass(null);
+      if (/security check/i.test(error.message)) return onExpire(error.message);
       setStatus({ state: "error", message: `Something went wrong: ${error.message || error}` });
     }
   }
@@ -348,10 +376,6 @@ export function ShipForm() {
         </div>
       </div>
     );
-  }
-
-  if (RECAPTCHA_KEY && !pass) {
-    return <CaptchaGate onPass={setPass} notice={status.state === "error" ? status.message : ""} />;
   }
 
   return (

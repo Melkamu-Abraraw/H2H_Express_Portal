@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { Check, Mail, Phone } from "lucide-react";
-import { RequestDeliveryButton, ShipForm } from "@/components/ship/ship-form";
+import { RequestDeliveryButton, ShipExperience } from "@/components/ship/ship-form";
 
 export const metadata = {
   title: "Send a package | Hand to Hand Express",
@@ -61,6 +61,8 @@ export default function ShipPage() {
       </header>
 
       <main className="mx-auto grid w-full max-w-6xl flex-1 gap-6 px-4 py-6 sm:px-6 sm:py-10">
+        <ShipExperience
+          intro={
         <div className="max-w-2xl">
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Send a package</h1>
           <p className="mt-2 text-[15px] text-muted-foreground">
@@ -68,10 +70,8 @@ export default function ShipPage() {
             live updates by email.
           </p>
         </div>
-
-        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-6">
-          <ShipForm />
-
+          }
+          aside={
           <aside className="grid gap-4 lg:sticky lg:top-20">
             <Panel title="Why ship with H2H">
               <ul className="grid gap-2.5">
@@ -121,7 +121,8 @@ export default function ShipPage() {
               </div>
             </Panel>
           </aside>
-        </div>
+          }
+        />
       </main>
     </div>
   );

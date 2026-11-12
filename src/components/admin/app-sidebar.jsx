@@ -30,8 +30,8 @@ import {
 const badgeTones = {
   brand: "bg-foreground/10 text-brand-dark dark:text-brand",
   alert: "bg-foreground/10 text-red-700 dark:text-red-500",
-  // Solid golden yellow, for things waiting for staff.
-  new: "bg-brand text-black",
+  // Golden yellow text, for things waiting for staff.
+  new: "bg-foreground/10 text-brand-dark dark:text-brand",
 };
 
 function isInSection(pathname, href) {
@@ -51,9 +51,9 @@ function NavButton({ item: { label, href, icon: Icon, badge }, pathname }) {
         <span>{label}</span>
         {badge && (
           <span
-            className={`inline-flex -translate-y-1 items-center gap-0.5 rounded-full px-1.5 py-0.5 font-mono text-[11px] leading-none font-bold group-data-[collapsible=icon]:hidden ${badgeTones[badge.tone]}`}
+            className={`inline-flex -translate-y-1 items-center gap-px rounded-full px-1.5 py-0.5 font-mono text-[11px] leading-none font-bold group-data-[collapsible=icon]:hidden ${badgeTones[badge.tone]}`}
           >
-            {badge.plus && <Plus className="size-2.5" strokeWidth={3.5} aria-hidden="true" />}
+            {badge.plus && <Plus className="size-2" strokeWidth={3.5} aria-hidden="true" />}
             {badge.count}
           </span>
         )}

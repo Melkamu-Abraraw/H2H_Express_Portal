@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Script from "next/script";
-import { ArrowRight, Check, ImagePlus, MapPin, Plus, X } from "lucide-react";
+import { Check, ImagePlus, MapPin, Plus, X } from "lucide-react";
 import { DIRECTIONS, RouteLabel } from "@/components/admin/shipping-routes";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,8 +34,6 @@ const CONSENT =
 
 // 16px text stops phones zooming into fields; 44px rows are easy to tap.
 const FIELD = "h-11 rounded-md text-base md:text-sm";
-const DARK_BUTTON =
-  "group gap-1 rounded-md bg-[#2c3654] font-semibold text-white hover:bg-[#3a4566] dark:bg-white dark:text-[#141a2e] dark:hover:bg-white/90";
 
 // Same limits as the current site: keeps uploads small enough for the proxy and Apps Script.
 function compressImage(file, maxDim, quality) {
@@ -568,19 +566,12 @@ function ShipForm({ pass, onExpire }) {
             {status.message}
           </p>
         )}
-        <Button type="submit" disabled={busy || !agreed} className={`${DARK_BUTTON} h-12 w-full text-base sm:w-auto sm:justify-self-end sm:px-6`}>
+        <Button type="submit" disabled={busy || !agreed} className="h-12 w-full rounded-md bg-brand text-base font-semibold text-black hover:bg-brand/90 sm:w-auto sm:justify-self-end sm:px-6">
           {status.state === "processing"
             ? "Processing photo..."
             : status.state === "submitting"
               ? "Submitting..."
               : "Submit delivery request"}
-          {!busy && (
-            <ArrowRight
-              className="size-4 text-brand transition-transform group-hover:translate-x-0.5 dark:text-brand-dark"
-              strokeWidth={2.5}
-              aria-hidden="true"
-            />
-          )}
         </Button>
       </Section>
     </form>

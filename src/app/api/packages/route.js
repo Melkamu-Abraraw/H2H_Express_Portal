@@ -129,9 +129,19 @@ const LIST_FIELDS = {
 };
 
 // GET /api/packages: every registered package, newest first.
-export async function GET() {
+export async function GET(request) {
   try {
     const db = await getDb();
+    // ?recent=1: the latest registrations only, for the notifications menu.
+    if (new URL(request.url).searchParams.has("recent")) {
+      const packages = await db
+        .collection("packages")
+        .find({}, { projection: { _id: 0, tracking: 1, sender: 1, receiver: 1, route: 1, cashier: 1, createdAt: 1 } })
+        .sort({ createdAt: -1 })
+        .limit(20)
+        .toArray();
+      return Response.json({ success: true, packages });
+    }
     const packages = await db
       .collection("packages")
       .find({}, { projection: LIST_FIELDS })

@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { Bell, Plus, Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { AppSidebar } from "@/components/admin/app-sidebar";
+import { NotificationsMenu } from "@/components/admin/notifications-menu";
 import { RouteTransition } from "@/components/route-transition";
 import { ThemeToggle } from "@/components/admin/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -43,9 +44,7 @@ export default function AdminLayout({ children }) {
                 <span className="hidden sm:inline">Register package</span>
               </Link>
             </Button>
-            <Button variant="outline" size="icon" aria-label="Notifications">
-              <Bell />
-            </Button>
+            <NotificationsMenu />
             <ThemeToggle />
           </div>
           <RouteTransition />

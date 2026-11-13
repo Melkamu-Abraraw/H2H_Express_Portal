@@ -65,6 +65,25 @@ export default function LoginPage() {
             · v1.0
           </span>
         </footer>
+        <p className="mx-auto mt-4 flex w-full max-w-md items-center justify-center gap-2 text-xs text-muted-foreground">
+          Designed and developed by
+          <a
+            href="https://www.peaceitech.com/"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Peace iTech website"
+            className="rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            {/* The logo's dark text would vanish on a dark page, so it turns white there. */}
+            <Image
+              src="/images/logos/peace-itech.png"
+              alt="Peace iTech"
+              width={720}
+              height={299}
+              className="h-auto w-14 dark:brightness-0 dark:invert"
+            />
+          </a>
+        </p>
       </section>
 
       {/* The right edge runs on a slant into the form column. */}

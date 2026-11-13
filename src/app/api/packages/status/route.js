@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/server/mongodb";
 import { moveToStep } from "@/lib/server/package-status";
+import { syncPackagePosts } from "@/lib/server/telegram";
 
 // POST /api/packages/status: moves packages forward to a tracking step.
 // Body: { trackings: [...], step: "departed" | "arrived" | ... }
@@ -22,6 +23,8 @@ export async function POST(request) {
   try {
     const db = await getDb();
     const { moved, skipped, unpaid, missing } = await moveToStep(db, trackings, step);
+    // Mirror the change in the Telegram group; failures are logged, not fatal.
+    await syncPackagePosts(db, moved.map((pkg) => pkg.tracking));
     return Response.json({ success: true, moved, skipped, unpaid, missing });
   } catch (error) {
     console.error("Updating package status failed", error);

@@ -10,8 +10,8 @@ export default function RequestsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Requests</h1>
         <p className="text-sm text-muted-foreground">
-          Orders submitted on the public page. Check them against the physical package, correct the
-          weight, then register them. Nothing is tracked or sent to the customer until you do.
+          Review online orders, verify packages, correct details if needed, and register them to start
+          tracking and customer notifications.
         </p>
       </div>
       <RequestsView />

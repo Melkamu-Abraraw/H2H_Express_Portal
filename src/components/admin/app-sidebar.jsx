@@ -57,14 +57,10 @@ function NavButton({ item: { label, href, icon: Icon, badge }, pathname }) {
         <span>{label}</span>
         {badge && (
           <span
-            className={`inline-flex -translate-y-1 items-center gap-px rounded-full px-1.5 py-0.5 font-mono ${badge.plus ? "text-[11px]" : "text-[14px]"} leading-none font-bold group-data-[collapsible=icon]:hidden ${badgeTones[badge.tone]}`}
+            className={`inline-flex -translate-y-1 items-center gap-px rounded-full px-1.5 py-0.5 font-mono ${badge.plus ? "text-[12px]" : "text-[10px]"} leading-none font-bold group-data-[collapsible=icon]:hidden ${badgeTones[badge.tone]}`}
           >
             {badge.plus && (
-              <Plus
-                className="size-[8px]"
-                strokeWidth={3.5}
-                aria-hidden="true"
-              />
+              <Plus className="size-2.5!" strokeWidth={3} aria-hidden="true" />
             )}
             {badge.count}
           </span>

@@ -7,6 +7,7 @@ import { statusDots } from "@/components/admin/package-views";
 import { formatMoney, getRate, useShippingRates } from "@/components/admin/pricing-store";
 import { AddRouteButton, EditRouteButton } from "@/components/admin/route-sheet";
 import { useRoutes } from "@/components/admin/routes-store";
+import { RoutesMap } from "@/components/admin/routes-map";
 import { RouteLabel } from "@/components/admin/shipping-routes";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
@@ -215,6 +216,7 @@ export function RoutesView() {
 
   return (
     <div className="grid gap-5">
+      <RoutesMap />
       <div className="flex items-center justify-between gap-3">
         <p role="status" className="text-sm text-muted-foreground">
           <span className="font-mono">{routes.length}</span> routes

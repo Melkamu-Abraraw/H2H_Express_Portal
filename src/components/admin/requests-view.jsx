@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
-import { LoaderCircle, PackageCheck, X } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { DIRECTIONS, RouteLabel } from "@/components/admin/shipping-routes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -94,13 +94,17 @@ export function RequestsView() {
                 </p>
               </div>
               <div className="flex gap-2">
-                <Button asChild>
-                  <Link href={`/admin/packages/new?request=${encodeURIComponent(item.code)}`}>
-                    <PackageCheck aria-hidden="true" /> Review &amp; register
-                  </Link>
+                <Button asChild size="sm" className="bg-brand text-black hover:bg-brand/90">
+                  <Link href={`/admin/packages/new?request=${encodeURIComponent(item.code)}`}>Review</Link>
                 </Button>
-                <Button variant="outline" disabled={busy === item.code} onClick={() => reject(item.code)}>
-                  <X aria-hidden="true" /> Reject
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-status-bad hover:text-status-bad"
+                  disabled={busy === item.code}
+                  onClick={() => reject(item.code)}
+                >
+                  Reject
                 </Button>
               </div>
             </CardContent>

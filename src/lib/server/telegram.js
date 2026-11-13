@@ -129,3 +129,20 @@ export async function announcePackage(pkg) {
     return { status: "failed" };
   }
 }
+
+// Redraws the group posts of packages whose status changed elsewhere (e.g. the admin portal),
+// so the card shows the new status and only the steps still ahead as buttons.
+export async function syncPackagePosts(db, trackings) {
+  if (!telegramConfigured() || !trackings.length) return;
+  const packages = await db
+    .collection("packages")
+    .find({ tracking: { $in: trackings }, "telegram.messageId": { $exists: true } }, { projection: { photos: 0 } })
+    .toArray();
+  await Promise.all(
+    packages.map((pkg) =>
+      editMessage(pkg.telegram.chatId, pkg.telegram.messageId, packageText(pkg), packageKeyboard(pkg)).catch((error) =>
+        console.error("Syncing Telegram post failed", error),
+      ),
+    ),
+  );
+}

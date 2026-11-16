@@ -4,8 +4,10 @@ import { useState } from "react";
 import { format } from "date-fns";
 import { ChevronDown, CircleCheck, Eye, X } from "lucide-react";
 import { formatMoney } from "@/components/admin/pricing-store";
+import { pickupAmount } from "@/lib/exchange";
+import { useExchangeRates } from "@/components/admin/exchange-store";
 import { balanceDue, blockedByPayment, currencyOf } from "@/components/admin/package-payments";
-import { trackingSteps, trackingTimeline } from "@/components/admin/package-tracking";
+import { stepsFor, trackingTimeline } from "@/components/admin/package-tracking";
 import { useRoutes } from "@/components/admin/routes-store";
 import { pickupBranchFor } from "@/components/admin/shipping-routes";
 import { useSettings } from "@/components/admin/settings-store";
@@ -79,7 +81,7 @@ function Timeline({ pkg }) {
 
 function UpdateStatusMenu({ pkg, onAdvance }) {
   const { requirePaymentBeforeDelivery } = useSettings();
-  const steps = trackingSteps(pkg.route);
+  const steps = stepsFor(pkg);
   const reached = steps.findIndex((step) => step.key === pkg.events.at(-1).step);
   const remaining = steps.slice(reached + 1);
 
@@ -141,6 +143,8 @@ function useBranches(pkg) {
 function CollectPanel({ pkg, onCollect }) {
   const currency = currencyOf(pkg);
   const due = balanceDue(pkg);
+  // The receiver pays in the destination's currency (Birr, CAD or UGX) at today's rate.
+  const local = pickupAmount(pkg, due, useExchangeRates());
   const { branches, pickup } = useBranches(pkg);
   const [method, setMethod] = useState("Cash");
   const [branchCode, setBranchCode] = useState(pickup?.code ?? branches[0]?.code ?? "");
@@ -167,7 +171,7 @@ function CollectPanel({ pkg, onCollect }) {
       className="flex flex-col gap-3 rounded-md border border-status-warn/40 bg-status-warn/5 p-3"
     >
       <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="font-medium text-status-warn">Collect {formatMoney(due, currency)}</span>
+        <span className="font-medium text-status-warn">Collect {local ? local.text : formatMoney(due, currency)}</span>
         <span className="text-xs text-muted-foreground">
           Paid {formatMoney(pkg.amountPaid, currency)} of {formatMoney(pkg.charge, currency)}
         </span>
@@ -216,6 +220,7 @@ function CollectPanel({ pkg, onCollect }) {
 function PaymentPanel({ pkg }) {
   const currency = currencyOf(pkg);
   const due = balanceDue(pkg);
+  const local = pickupAmount(pkg, due, useExchangeRates());
 
   if (due === 0) {
     return (
@@ -238,13 +243,15 @@ function PaymentPanel({ pkg }) {
         </span>
       </div>
       <p className="text-xs text-muted-foreground">
-        Collected at pickup, before the package is marked delivered.
+        Collected at pickup{local ? ` as ${local.text}` : ""}, before the package is marked delivered.
       </p>
     </div>
   );
 }
 
-export function PackageRowActions({ pkg, onAdvance, onCollect }) {
+// `canUpdate` / `canCollect`: whether the signed-in role may move the package along or take
+// money for it (the server checks both again).
+export function PackageRowActions({ pkg, onAdvance, onCollect, canUpdate = true, canCollect = true }) {
   const [open, setOpen] = useState(false);
   const summary = [`${pkg.sender} → ${pkg.receiver}`, `${pkg.weight.toFixed(1)} kg`].join(" · ");
 
@@ -264,7 +271,7 @@ export function PackageRowActions({ pkg, onAdvance, onCollect }) {
         </IconAction>
         <PopoverContent
           align="end"
-          className="flex w-[calc(100vw-2rem)] max-w-96 flex-col gap-4 p-4"
+          className="flex max-h-(--radix-popover-content-available-height) w-[calc(100vw-2rem)] max-w-96 flex-col gap-4 overflow-y-auto p-4"
         >
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -282,17 +289,29 @@ export function PackageRowActions({ pkg, onAdvance, onCollect }) {
           </div>
           <Timeline pkg={pkg} />
           {balanceDue(pkg) > 0 && pkg.events.at(-1).step === "pickup" ? (
-            <CollectPanel
-              pkg={pkg}
-              onCollect={async (payment) => {
-                await onCollect(payment);
-                setOpen(false);
-              }}
-            />
+            canCollect && canUpdate ? (
+              // Collecting the balance also marks the package delivered, so no separate status menu.
+              <CollectPanel
+                pkg={pkg}
+                onCollect={async (payment) => {
+                  await onCollect(payment);
+                  setOpen(false);
+                }}
+              />
+            ) : (
+              <>
+                <PaymentPanel pkg={pkg} />
+                <p className="text-xs text-muted-foreground">
+                  The balance is collected at the front desk before the package is handed over.
+                </p>
+              </>
+            )
           ) : (
-            <PaymentPanel pkg={pkg} />
+            <>
+              <PaymentPanel pkg={pkg} />
+              {canUpdate && <UpdateStatusMenu pkg={pkg} onAdvance={onAdvance} />}
+            </>
           )}
-          <UpdateStatusMenu pkg={pkg} onAdvance={onAdvance} />
         </PopoverContent>
       </Popover>
     </div>

@@ -1,6 +1,7 @@
 import { v2 as cloudinary } from "cloudinary";
 
 export const PACKAGE_PHOTO_FOLDER = "h2h-express/packages";
+export const AVATAR_FOLDER = "h2h-express/avatars";
 
 export function cloudinaryConfig() {
   const config = {

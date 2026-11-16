@@ -8,15 +8,20 @@ import {
   ArrowDown,
   ArrowLeftRight,
   ArrowUp,
+  ChevronRight,
   CircleCheck,
   Package,
+  PackageCheck,
   TriangleAlert,
   Truck,
-  Users,
 } from "lucide-react";
-import { CURRENT_USER } from "@/components/admin/current-user";
+import { HANDLING } from "@/lib/handling";
+import { statusFromEvents } from "@/components/admin/package-tracking";
+import { RecentPackages } from "@/components/admin/recent-packages";
+import { useProfile } from "@/components/admin/profile-store";
 import { useToday } from "@/components/admin/date-range-picker";
-import { balanceDue } from "@/components/admin/package-payments";
+import { balanceDue, totalsByCurrency } from "@/components/admin/package-payments";
+import { formatMoney } from "@/components/admin/pricing-store";
 import { useSettings } from "@/components/admin/settings-store";
 import { packageCountries } from "@/components/admin/shipping-routes";
 import { Button } from "@/components/ui/button";
@@ -44,8 +49,9 @@ const SERIES_COLORS = [
 const STALE_TRANSIT_DAYS = 7;
 
 const statusBars = [
-  { status: "In transit", label: "In transit", color: "[&>*]:bg-brand" },
-  { status: "Ready for pickup", label: "Ready for pickup", color: "[&>*]:bg-foreground" },
+  { status: "Received", label: "Received", color: "[&>*]:bg-status-received" },
+  { status: "In transit", label: "In transit", color: "[&>*]:bg-status-transit" },
+  { status: "Ready for pickup", label: "Ready for pickup", color: "[&>*]:bg-status-pickup" },
   { status: "Delivered", label: "Delivered", color: "[&>*]:bg-status-good" },
 ];
 
@@ -103,14 +109,15 @@ function routePair(pkg) {
   return [from.name, to.name].sort().join(" ↔ ");
 }
 
-// Change against the previous period: a percentage, or the plain count when that period was
-// empty. `direction` is 1 (up), -1 (down) or 0 (no change).
+// Change against the previous period. A percentage needs something to compare with, so when the
+// previous period was empty it says "New this period" (or a dash if both are empty) instead of
+// an always-100% figure. `direction` is 1 (up), -1 (down) or 0 (no change).
 function change(current, before) {
-  const direction = Math.sign(current - before);
-  if (before > 0) {
-    return { text: `${Math.abs(Math.round(((current - before) / before) * 100))}%`, direction };
+  if (before <= 0) {
+    return current > 0 ? { text: "New this period", direction: 1 } : { text: "—", direction: 0 };
   }
-  return { text: String(Math.abs(current - before)), direction };
+  const direction = Math.sign(current - before);
+  return { text: `${Math.abs(Math.round(((current - before) / before) * 100))}%`, direction };
 }
 
 // Green arrow up for an increase, red arrow down for a drop, no arrow when nothing changed.
@@ -123,7 +130,7 @@ function Trend({ value }) {
         ? "text-status-bad"
         : "text-muted-foreground";
   return (
-    <span className={`inline-flex items-center gap-0.5 align-top font-mono leading-5 ${tone}`}>
+    <span className={`inline-flex items-center gap-0.5 align-top leading-5 tabular-nums ${tone}`}>
       {Arrow && <Arrow className="size-3.5" strokeWidth={2.5} aria-hidden="true" />}
       <span className="sr-only">
         {value.direction > 0 ? "up" : value.direction < 0 ? "down" : "no change"}
@@ -133,19 +140,15 @@ function Trend({ value }) {
   );
 }
 
-function ChangeText({ value, period }) {
-  return (
-    <>
-      <Trend value={value} /> vs last {period} days
-    </>
-  );
-}
-
-function KpiCard({ title, value, detail, icon: Icon }) {
+// `caption` says which period the number covers, since only some cards follow the date filter.
+function KpiCard({ title, caption, value, detail, icon: Icon }) {
   return (
     <Card size="sm" className="gap-1">
       <CardHeader className="flex flex-row items-start justify-between">
-        <CardDescription>{title}</CardDescription>
+        <div className="grid gap-0.5">
+          <CardDescription>{title}</CardDescription>
+          {caption && <span className="text-xs text-muted-foreground/80">{caption}</span>}
+        </div>
         <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
       </CardHeader>
       <CardContent>
@@ -247,7 +250,9 @@ function VolumeCard({ buckets, series, range, tickInterval }) {
 }
 
 function StatusCard({ packages }) {
-  const unpaid = packages.filter((pkg) => balanceDue(pkg) > 0).length;
+  const owing = packages.filter((pkg) => balanceDue(pkg) > 0);
+  // Routes charge in different currencies, so the amount is listed per currency.
+  const owed = totalsByCurrency(owing, balanceDue).map(([code, amount]) => formatMoney(amount, code));
   return (
     <Card className="min-w-0 lg:col-span-3">
       <CardHeader>
@@ -279,7 +284,15 @@ function StatusCard({ packages }) {
         <Separator className="mt-auto" />
         <div className="flex justify-between text-sm">
           <span className="text-muted-foreground">Balance due</span>
-          <span className="font-mono font-semibold">{number.format(unpaid)}</span>
+          <span className="text-right">
+            <span className="font-mono font-semibold">{owed.length ? owed.join(" + ") : "None"}</span>
+            {owing.length > 0 && (
+              <span className="text-muted-foreground">
+                {" "}
+                owed · {number.format(owing.length)} {owing.length === 1 ? "package" : "packages"}
+              </span>
+            )}
+          </span>
         </div>
       </CardContent>
     </Card>
@@ -288,17 +301,41 @@ function StatusCard({ packages }) {
 
 function buildAlerts(packages, today, pickupDays) {
   const age = (date) => differenceInCalendarDays(today, date);
+  // Delivered packages never raise alerts; the last tracking step is the source of truth.
+  packages = packages.filter((pkg) => pkg.events.at(-1).step !== "delivered");
   const pickup = packages.filter((pkg) => pkg.status === "Ready for pickup");
   const waiting = pickup.filter((pkg) => age(lastUpdate(pkg)) > pickupDays);
   const owing = pickup.filter((pkg) => balanceDue(pkg) > 0);
   const stale = packages.filter(
     (pkg) => pkg.status === "In transit" && age(lastUpdate(pkg)) > STALE_TRANSIT_DAYS,
   );
+  // Packages flagged at registration (urgent, fragile, rush, special care) until delivered.
+  const flagged = HANDLING.map((item) => {
+    const matching = packages.filter(
+      (pkg) => pkg.handling?.flags?.includes(item.key),
+    );
+    // A rush package shows its earliest "must arrive before" date, and turns critical once it's passed.
+    const deadlines = item.key === "rush" ? matching.map((pkg) => pkg.handling.rushBy).filter(Boolean).sort() : [];
+    const overdue = deadlines.length > 0 && deadlines[0] < format(today, "yyyy-MM-dd");
+    return {
+      id: `handling-${item.key}`,
+      severity: overdue ? "critical" : item.severity,
+      count: matching.length,
+      trackings: matching.map((pkg) => pkg.tracking),
+      title: item.label,
+      detail: deadlines.length
+        ? `${overdue ? "Past deadline" : "Arrive before"} ${format(new Date(`${deadlines[0]}T00:00`), "MMM d")}`
+        : "Needs attention before it ships",
+      href: `/admin/packages?handling=${item.key}`,
+    };
+  });
   return [
+    ...flagged,
     {
       id: "owing",
       severity: "critical",
       count: owing.length,
+      trackings: owing.map((pkg) => pkg.tracking),
       title: "Unpaid at pickup",
       detail: "Collect before release",
       href: "/admin/packages/pickup",
@@ -307,6 +344,7 @@ function buildAlerts(packages, today, pickupDays) {
       id: "waiting",
       severity: "warning",
       count: waiting.length,
+      trackings: waiting.map((pkg) => pkg.tracking),
       title: "Waiting for pickup",
       detail: `Ready over ${pickupDays} ${pickupDays === 1 ? "day" : "days"}`,
       href: "/admin/packages/pickup",
@@ -315,6 +353,7 @@ function buildAlerts(packages, today, pickupDays) {
       id: "stale",
       severity: "warning",
       count: stale.length,
+      trackings: stale.map((pkg) => pkg.tracking),
       title: "No update",
       detail: `${STALE_TRANSIT_DAYS}+ days in transit`,
       href: "/admin/packages/in-transit",
@@ -323,28 +362,32 @@ function buildAlerts(packages, today, pickupDays) {
 }
 
 function IssueAlerts({ alerts, loading }) {
-  const count = alerts.reduce((sum, alert) => sum + alert.count, 0);
+  // One package can raise several alerts, so packages are counted once.
+  const packageCount = new Set(alerts.flatMap((alert) => alert.trackings)).size;
 
   return (
     <Card size="sm" className="min-w-0 gap-2 py-2.5">
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <CardTitle className="inline-flex items-center gap-2 text-sm">
           Issue Alerts
-          <span className="rounded-full bg-foreground/10 px-1.5 py-0.5 font-mono text-[11px] leading-none font-bold text-brand-dark dark:text-brand">
-            {count}
-          </span>
+          {alerts.length > 0 && (
+            <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[11px] leading-none font-semibold text-brand-dark tabular-nums dark:text-brand">
+              {alerts.length} {alerts.length === 1 ? "alert" : "alerts"} · {packageCount}{" "}
+              {packageCount === 1 ? "package" : "packages"}
+            </span>
+          )}
         </CardTitle>
         <Button variant="outline" size="xs" asChild>
           <Link href="/admin/packages">View All</Link>
         </Button>
       </CardHeader>
-      <CardContent className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+      <CardContent className="flex flex-wrap gap-2">
         {/* Same height as one alert row, so the cards below don't jump when data arrives. */}
         {loading ? (
           <div className="h-10 animate-pulse rounded-lg border bg-muted/40" aria-hidden="true" />
         ) : (
           alerts.length === 0 && (
-            <p className="flex h-10 items-center gap-2 text-sm text-muted-foreground sm:col-span-2 xl:col-span-3">
+            <p className="flex h-10 items-center gap-2 text-sm text-muted-foreground">
               <CircleCheck className="size-4 text-status-good" aria-hidden="true" />
               No issues
             </p>
@@ -355,7 +398,7 @@ function IssueAlerts({ alerts, loading }) {
             key={alert.id}
             href={alert.href}
             title={`${alert.count} ${alert.count === 1 ? "Package" : "Packages"} – ${alert.title}: ${alert.detail}`}
-            className="flex h-10 min-w-0 items-center gap-2 rounded-lg border px-2 transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="group flex h-10 min-w-56 flex-1 basis-56 items-center gap-2 rounded-lg border px-2 transition-colors hover:border-foreground/30 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             <span
               className={`flex size-6 shrink-0 items-center justify-center rounded-md ${severityStyles[alert.severity]}`}
@@ -371,6 +414,10 @@ function IssueAlerts({ alerts, loading }) {
                 {alert.detail}
               </span>
             </span>
+            <ChevronRight
+              className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground"
+              aria-hidden="true"
+            />
           </Link>
         ))}
       </CardContent>
@@ -378,7 +425,15 @@ function IssueAlerts({ alerts, loading }) {
   );
 }
 
-function buildDashboard(packages, customers, today, range) {
+// How many packages had this status at a past moment, from their tracking history.
+function countAt(packages, status, moment) {
+  return packages.filter((pkg) => {
+    const events = pkg.events.filter((event) => event.date <= moment);
+    return events.length > 0 && statusFromEvents(events) === status;
+  }).length;
+}
+
+function buildDashboard(packages, today, range) {
   const { bucket } = RANGES.find((option) => option.days === range);
   const end = addDays(startOfDay(today), 1);
   const start = subDays(end, range);
@@ -392,41 +447,48 @@ function buildDashboard(packages, customers, today, range) {
   const deliveredBefore = packages.filter((pkg) =>
     within(deliveredOn(pkg), previousStart, start),
   ).length;
-  const newCustomers = customers.filter((person) =>
-    within(new Date(person.customerSince), start, end),
-  ).length;
+  const received = packages.filter((pkg) => pkg.status === "Received").length;
   const inTransit = packages.filter((pkg) => pkg.status === "In transit").length;
   const readyForPickup = packages.filter((pkg) => pkg.status === "Ready for pickup").length;
 
+  // Every card has the same shape: a number and its change against the period (or, for live
+  // counts, against the same moment one period ago).
+  const ago = `Now · vs ${range} days ago`;
   const kpis = [
     {
-      title: "Total customers",
-      icon: Users,
-      value: number.format(customers.length),
-      detail: (
-        <>
-          <Trend value={{ text: String(newCustomers), direction: Math.sign(newCustomers) }} /> new ·{" "}
-          {range} days
-        </>
-      ),
-    },
-    {
-      title: "Total packages",
+      title: "Packages registered",
+      caption: `Last ${range} days`,
       icon: Package,
       value: number.format(registered.length),
-      detail: <ChangeText value={change(registered.length, registeredBefore)} period={range} />,
+      detail: <Trend value={change(registered.length, registeredBefore)} />,
+    },
+    {
+      title: "Received",
+      caption: ago,
+      icon: Package,
+      value: number.format(received),
+      detail: <Trend value={change(received, countAt(packages, "Received", start))} />,
     },
     {
       title: "In transit",
+      caption: ago,
       icon: Truck,
       value: number.format(inTransit),
-      detail: `${number.format(readyForPickup)} ready for pickup`,
+      detail: <Trend value={change(inTransit, countAt(packages, "In transit", start))} />,
+    },
+    {
+      title: "Ready for pickup",
+      caption: ago,
+      icon: PackageCheck,
+      value: number.format(readyForPickup),
+      detail: <Trend value={change(readyForPickup, countAt(packages, "Ready for pickup", start))} />,
     },
     {
       title: "Delivered",
+      caption: `Last ${range} days`,
       icon: CircleCheck,
       value: number.format(delivered),
-      detail: <ChangeText value={change(delivered, deliveredBefore)} period={range} />,
+      detail: <Trend value={change(delivered, deliveredBefore)} />,
     },
   ];
 
@@ -462,8 +524,9 @@ function buildDashboard(packages, customers, today, range) {
 }
 
 export function DashboardView() {
+  const profile = useProfile();
   const [range, setRange] = useState(30);
-  const [data, setData] = useState({ state: "loading", packages: [], customers: [] });
+  const [data, setData] = useState({ state: "loading", packages: [] });
   const today = useToday();
   const { pickupReminderDays } = useSettings();
 
@@ -472,20 +535,19 @@ export function DashboardView() {
   useEffect(() => {
     let cancelled = false;
     function load(first) {
-      Promise.all([fetchJson("/api/packages"), fetchJson("/api/customers")])
-        .then(([packageResult, customerResult]) => {
+      fetchJson("/api/packages")
+        .then((packageResult) => {
           if (cancelled) return;
           setData({
             state: "ready",
             packages: packageResult.packages.map(fromApiPackage),
-            customers: customerResult.customers,
           });
         })
         .catch(
           (error) =>
             first &&
             !cancelled &&
-            setData({ state: "error", message: error.message, packages: [], customers: [] }),
+            setData({ state: "error", message: error.message, packages: [] }),
         );
     }
     load(true);
@@ -497,7 +559,7 @@ export function DashboardView() {
   }, []);
 
   const ready = data.state === "ready" && today;
-  const dashboard = ready ? buildDashboard(data.packages, data.customers, today, range) : null;
+  const dashboard = ready ? buildDashboard(data.packages, today, range) : null;
   const alerts = ready ? buildAlerts(data.packages, today, pickupReminderDays) : [];
 
   return (
@@ -505,7 +567,7 @@ export function DashboardView() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">
-            Welcome back, <span className="text-brand">{CURRENT_USER.name}</span>
+            Welcome back, <span className="text-brand">{profile.name}</span>
           </h1>
           <TodayDate />
         </div>
@@ -514,7 +576,7 @@ export function DashboardView() {
           value={String(range)}
           onValueChange={(value) => value && setRange(Number(value))}
           aria-label="Date range"
-          className="rounded-lg bg-muted p-1"
+          className="rounded-sm bg-muted p-1"
         >
           {RANGES.map(({ days }) => (
             <ToggleGroupItem
@@ -534,10 +596,10 @@ export function DashboardView() {
         </p>
       )}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Key metrics">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="Key metrics">
         {dashboard
           ? dashboard.kpis.map((kpi) => <KpiCard key={kpi.title} {...kpi} />)
-          : ["Total customers", "Total packages", "In transit", "Delivered"].map((title) => (
+          : ["Packages registered", "In transit", "Ready for pickup", "Delivered"].map((title) => (
               <KpiCard key={title} title={title} value="—" detail="Loading…" icon={Package} />
             ))}
       </section>
@@ -553,6 +615,8 @@ export function DashboardView() {
         />
         <StatusCard packages={data.packages} />
       </section>
+
+      <RecentPackages packages={data.packages} today={today} loading={!ready && data.state !== "error"} />
     </main>
   );
 }

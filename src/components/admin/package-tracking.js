@@ -8,7 +8,7 @@ const LEGS = {
 };
 
 const STEP_STATUS = {
-  received: "In transit",
+  received: "Received",
   departed: "In transit",
   arrived: "In transit",
   customs: "In transit",
@@ -36,6 +36,16 @@ export function trackingSteps(route) {
   return stepsBetween(hub, city);
 }
 
+// The steps as one package shows them everywhere (portal and Telegram): received at its
+// branch, arrived in its destination country.
+export function stepsFor(pkg) {
+  return trackingSteps(pkg.route).map((step) => {
+    if (step.key === "received" && pkg.branch?.name) return { ...step, label: `Received at ${pkg.branch.name}` };
+    if (step.key === "arrived" && pkg.to) return { ...step, label: `Arrived in ${pkg.to}` };
+    return step;
+  });
+}
+
 export function routeCities(route) {
   const { hub, city } = LEGS[route] ?? {};
   return { hub, city };
@@ -46,12 +56,13 @@ export function statusFromEvents(events) {
 }
 
 // Every step with its event date, or an estimate for steps not reached yet.
-export function trackingTimeline({ route, events }) {
+export function trackingTimeline(pkg) {
+  const { events } = pkg;
   const reached = new Map(events.map((event) => [event.step, event.date]));
   const last = events.at(-1);
   let pending = 0;
 
-  return trackingSteps(route).map((step) => {
+  return stepsFor(pkg).map((step) => {
     const date = reached.get(step.key);
     if (date) return { ...step, date, state: step.key === last.step ? "current" : "done" };
     pending += 1;

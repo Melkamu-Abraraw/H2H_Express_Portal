@@ -1,10 +1,16 @@
-import { Inter, Roboto_Mono } from "next/font/google";
+import { Inter, Plus_Jakarta_Sans, Roboto_Mono } from "next/font/google";
 import { SplashScreen } from "@/components/splash-screen";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 const inter = Inter({
   variable: "--font-inter",
+  subsets: ["latin"],
+});
+
+// Used for the loading text on the splash screen and the Sign in button.
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-jakarta",
   subsets: ["latin"],
 });
 
@@ -25,7 +31,7 @@ export default function RootLayout({ children }) {
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${robotoMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${jakarta.variable} ${robotoMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>

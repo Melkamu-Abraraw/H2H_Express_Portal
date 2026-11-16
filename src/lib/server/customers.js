@@ -55,11 +55,12 @@ function addTotal(totals, currency, amount) {
   if (amount > 0) totals.set(currency, Math.round(((totals.get(currency) ?? 0) + amount) * 100) / 100);
 }
 
-export async function listCustomers() {
+// `filter` narrows the packages people are built from, e.g. to one branch's.
+export async function listCustomers(filter = {}) {
   const db = await getDb();
   const packages = await db
     .collection("packages")
-    .find({}, { projection: FIELDS })
+    .find(filter, { projection: FIELDS })
     .sort({ createdAt: 1 })
     .toArray();
 

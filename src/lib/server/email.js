@@ -148,3 +148,76 @@ export async function sendPackageConfirmation(pkg, trackUrl) {
     attachments: logo ? [logo] : [],
   });
 }
+
+function inviteHtml({ to, name, company, role, branch, inviter, link, expires }, withLogo) {
+  return `<!doctype html>
+<html><body style="margin:0;background:#f3f4f6;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 12px">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:10px;border:1px solid #e5e7eb">
+        ${
+          withLogo
+            ? `<tr><td align="center" style="padding:24px 24px 4px">
+          <img src="cid:${LOGO_CID}" width="88" alt="" style="display:block;width:88px;height:auto;border:0">
+          <p style="margin:10px 0 0;font-size:17px;font-weight:800;letter-spacing:2px;color:#111827">HAND TO HAND</p>
+          <p style="margin:2px 0 0;font-size:10px;font-weight:600;letter-spacing:3px;color:#6b7280">EXPRESS DELIVERY</p>
+        </td></tr>`
+            : ""
+        }
+        <tr><td style="padding:${withLogo ? "12px" : "24px"} 24px 8px">
+          <h1 style="margin:6px 0 0;font-size:20px;color:#111827">You're invited to the ${escapeHtml(company)} portal</h1>
+          <p style="margin:8px 0 0;font-size:14px;color:#374151;line-height:1.5">
+            Hi ${escapeHtml(name)}, ${escapeHtml(inviter)} has given you access to the ${escapeHtml(company)} staff portal.
+            Set your password to activate your account.
+          </p>
+        </td></tr>
+        <tr><td style="padding:8px 24px 0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #e5e7eb">
+            ${row("Role", escapeHtml(role))}
+            ${row("Branch", escapeHtml(branch))}
+            ${row("Sign-in email", escapeHtml(to))}
+          </table>
+        </td></tr>
+        <tr><td style="padding:20px 24px 8px" align="center">
+          <a href="${escapeHtml(link)}" style="display:inline-block;background:#f9c03c;color:#1c1c1c;text-decoration:none;font-weight:700;font-size:14px;padding:12px 22px;border-radius:8px;border:1px solid #dca528">Activate your account</a>
+        </td></tr>
+        <tr><td style="padding:8px 24px 24px">
+          <p style="margin:0;font-size:12px;line-height:1.5;color:#6b7280">
+            This link works once and expires on ${escapeHtml(expires)}. If you weren't expecting it, you can ignore this email.
+          </p>
+        </td></tr>
+      </table>
+      <p style="margin:16px 0 0;font-size:12px;color:#9ca3af">${escapeHtml(company)} · Canada, Ethiopia and Uganda</p>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+// Invites a new staff member to set their password. `invite`: { to, name, role, branch, inviter, link, expiresAt }
+export async function sendStaffInvite(invite) {
+  const company = "Hand to Hand Express";
+  const expires = new Intl.DateTimeFormat("en-CA", { dateStyle: "long", timeStyle: "short" }).format(invite.expiresAt);
+  const details = { ...invite, company, expires };
+  const logo = await logoAttachment();
+  await transporter().sendMail({
+    from: process.env.EMAIL_FROM || `${company} <${process.env.SMTP_USER}>`,
+    to: invite.to,
+    subject: `You're invited to the ${company} portal`,
+    text: [
+      `Hi ${invite.name},`,
+      "",
+      `${invite.inviter} has given you access to the ${company} staff portal.`,
+      `Role: ${invite.role}`,
+      `Branch: ${invite.branch}`,
+      `Sign-in email: ${invite.to}`,
+      "",
+      `Activate your account and set your password: ${invite.link}`,
+      "",
+      `This link works once and expires on ${expires}. If you weren't expecting it, you can ignore this email.`,
+      "",
+      company,
+    ].join("\n"),
+    html: inviteHtml(details, Boolean(logo)),
+    attachments: logo ? [logo] : [],
+  });
+}

@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { balanceDue, currencyOf } from "@/components/admin/package-payments";
-import { trackingSteps } from "@/components/admin/package-tracking";
+import { stepsFor } from "@/components/admin/package-tracking";
 import { packageCountries } from "@/components/admin/shipping-routes";
 
 const COLUMNS = [
@@ -13,7 +13,7 @@ const COLUMNS = [
   [
     "Current step",
     (item) =>
-      trackingSteps(item.route).find((step) => step.key === item.events.at(-1).step)?.label ?? "",
+      stepsFor(item).find((step) => step.key === item.events.at(-1).step)?.label ?? "",
   ],
   ["Payment", (item) => item.payment],
   ["Charge", (item) => item.charge.toFixed(2)],

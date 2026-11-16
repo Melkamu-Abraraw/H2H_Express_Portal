@@ -1,3 +1,4 @@
+import { getExchangeRates } from "@/lib/server/exchange";
 import { getDb } from "@/lib/server/mongodb";
 import { moveToStep } from "@/lib/server/package-status";
 import {
@@ -23,9 +24,9 @@ function escapeRegExp(value) {
 }
 
 // Redraws the package's original post in the group so it always shows the latest status.
-async function refreshPost(pkg) {
+async function refreshPost(pkg, rate) {
   if (!pkg.telegram) return;
-  await editMessage(pkg.telegram.chatId, pkg.telegram.messageId, packageText(pkg), packageKeyboard(pkg)).catch(
+  await editMessage(pkg.telegram.chatId, pkg.telegram.messageId, packageText(pkg, rate), packageKeyboard(pkg)).catch(
     (error) => console.error("Refreshing Telegram post failed", error),
   );
 }
@@ -53,8 +54,9 @@ async function handleButton(query) {
   const pkg = await db.collection("packages").findOne({ tracking }, NO_PHOTOS);
   if (!pkg) return answerCallback(query.id, "Package not found.");
   // The card that was tapped may be a search result, so refresh it and the original post.
-  await editMessage(message.chat.id, message.message_id, packageText(pkg), packageKeyboard(pkg));
-  if (pkg.telegram?.messageId !== message.message_id) await refreshPost(pkg);
+  const rate = await getExchangeRates(db).catch(() => null);
+  await editMessage(message.chat.id, message.message_id, packageText(pkg, rate), packageKeyboard(pkg));
+  if (pkg.telegram?.messageId !== message.message_id) await refreshPost(pkg, rate);
   await answerCallback(query.id, toast);
 }
 
@@ -75,7 +77,9 @@ async function handleFind(message, term) {
     .toArray();
 
   if (!matches.length) return reply(`No package matches "${escapeHtml(search)}".`);
-  if (matches.length === 1) return reply(packageText(matches[0]), packageKeyboard(matches[0]));
+  if (matches.length === 1) {
+    return reply(packageText(matches[0], await getExchangeRates(db).catch(() => null)), packageKeyboard(matches[0]));
+  }
   return reply(`${matches.length} packages match "${escapeHtml(search)}". Tap one:`, {
     inline_keyboard: matches.map((pkg) => [
       { text: `${pkg.tracking} · ${pkg.receiver}`, callback_data: `v:${pkg.tracking}` },
@@ -99,7 +103,10 @@ async function handleReply(message) {
   const by = personName(message.from);
   const { moved, skipped, unpaid } = await moveToStep(db, [pkg.tracking], step.key, `${by} (Telegram)`);
   if (moved.length) {
-    await refreshPost(await db.collection("packages").findOne({ tracking: pkg.tracking }, NO_PHOTOS));
+    await refreshPost(
+      await db.collection("packages").findOne({ tracking: pkg.tracking }, NO_PHOTOS),
+      await getExchangeRates(db).catch(() => null),
+    );
     await reply(`✅ <b>${escapeHtml(pkg.tracking)}</b> → ${step.label} (by ${escapeHtml(by)})`);
   } else if (unpaid.length) await reply(`⚠️ ${escapeHtml(pkg.tracking)} still has a balance to pay, so it can't be marked Delivered yet.`);
   else if (skipped.length) await reply(`ℹ️ ${escapeHtml(pkg.tracking)} is already at or past "${step.label}".`);

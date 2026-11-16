@@ -27,7 +27,7 @@ export function SplashScreen() {
 
   return (
     <div
-      className={`fixed inset-0 z-100 grid place-items-center bg-background transition-opacity duration-400 ${
+      className={`font-loading fixed inset-0 z-100 grid place-items-center bg-background transition-opacity duration-400 ${
         phase === "leaving" ? "pointer-events-none opacity-0" : ""
       }`}
     >
@@ -35,7 +35,7 @@ export function SplashScreen() {
         preload
         label={
           <>
-            <span className="text-brand">H2H</span> Express
+            <span className="text-brand">H2H</span> Express Delivery
           </>
         }
         detail="Getting your packages ready…"

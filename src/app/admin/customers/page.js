@@ -4,7 +4,10 @@ export const metadata = {
   title: "Customers | H2H Express",
 };
 
-export default function CustomersPage() {
+export default async function CustomersPage({ searchParams }) {
+  const { q } = await searchParams;
+  const initialSearch = typeof q === "string" ? q.slice(0, 60) : "";
+
   return (
     <main className="flex flex-1 flex-col gap-5 p-4 md:p-6">
       <div>
@@ -13,7 +16,7 @@ export default function CustomersPage() {
           People who send or receive packages, and travelers who carry them.
         </p>
       </div>
-      <CustomersTable />
+      <CustomersTable key={initialSearch} initialSearch={initialSearch} />
     </main>
   );
 }

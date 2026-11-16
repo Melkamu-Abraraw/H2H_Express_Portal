@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { Monitor, Moon, RotateCcw, Sun } from "lucide-react";
+import { saveExchangeRates, useExchangeRates } from "@/components/admin/exchange-store";
+import { useProfile } from "@/components/admin/profile-store";
+import { can } from "@/lib/permissions";
 import { resetShippingRates, useShippingRates } from "@/components/admin/pricing-store";
 import { resetRoutes, useRoutes } from "@/components/admin/routes-store";
 import {
@@ -10,7 +13,6 @@ import {
   saveSettings,
   useSettings,
 } from "@/components/admin/settings-store";
-import { resetStaff, useStaff } from "@/components/admin/staff-store";
 import { setTheme, useTheme } from "@/components/admin/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -280,7 +282,6 @@ function ResetButton({ label, onReset }) {
 function SavedData() {
   const routes = useRoutes();
   const rates = useShippingRates();
-  const staff = useStaff();
   const settings = useSettings();
   const added = routes.filter((route) => !route.builtIn).length;
   const priced = Object.keys(rates).length;
@@ -299,12 +300,6 @@ function SavedData() {
       title: "Shipping rates",
       detail: `Set for ${plural(priced, "route")}. Clears every price per kg.`,
       onReset: resetShippingRates,
-    },
-    {
-      label: "staff",
-      title: "Staff",
-      detail: `${staff.length === 1 ? "1 person" : `${staff.length} people`}. Goes back to the sample team.`,
-      onReset: resetStaff,
     },
     {
       label: "settings",
@@ -334,10 +329,76 @@ function SavedData() {
   );
 }
 
+const RATE_FIELDS = [
+  { key: "ETB", id: "cad-etb", label: "1 CAD equals (ETB)" },
+  { key: "UGX", id: "cad-ugx", label: "1 CAD equals (UGX)" },
+];
+
+function ExchangeRate() {
+  const stored = useExchangeRates();
+  const [draft, setDraft] = useState({});
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const valueOf = (key) => draft[key] ?? (stored[key] ? String(stored[key]) : "");
+  const dirty = RATE_FIELDS.some(({ key }) => draft[key] !== undefined && Number(draft[key]) !== (stored[key] ?? 0));
+
+  async function submit(event) {
+    event.preventDefault();
+    const changed = RATE_FIELDS.filter(({ key }) => draft[key] !== undefined && draft[key] !== "");
+    if (!changed.length || changed.some(({ key }) => !(Number(draft[key]) > 0))) {
+      return setError("Enter how much local money one Canadian dollar buys.");
+    }
+    try {
+      await saveExchangeRates(Object.fromEntries(changed.map(({ key }) => [key.toLowerCase(), Number(draft[key])])));
+      setError("");
+      setDraft({});
+      setSaved(true);
+    } catch (failure) {
+      setError(failure.message);
+    }
+  }
+
+  return (
+    <SettingsCard
+      title="Currency exchange"
+      description="Set by the owner. Packages are collected at pickup in the destination's currency: Birr in Ethiopia, Canadian dollars in Canada, Uganda shillings in Uganda."
+    >
+      <form onSubmit={submit} className="grid gap-4" noValidate>
+        {RATE_FIELDS.map(({ key, id, label }) => (
+          <div key={key} className="grid gap-1.5">
+            <Label htmlFor={id}>{label}</Label>
+            <Input
+              id={id}
+              inputMode="decimal"
+              type="number"
+              min="0"
+              step="any"
+              value={valueOf(key)}
+              aria-invalid={Boolean(error)}
+              onChange={(event) => {
+                setDraft({ ...draft, [key]: event.target.value });
+                setSaved(false);
+              }}
+            />
+          </div>
+        ))}
+        {error && (
+          <p role="alert" className="text-sm text-status-bad">
+            {error}
+          </p>
+        )}
+        <SaveRow saved={saved} dirty={dirty} />
+      </form>
+    </SettingsCard>
+  );
+}
+
 export function SettingsView() {
+  const profile = useProfile();
   return (
     <div className="grid gap-5">
       <BusinessProfile />
+      {can(profile, "exchange.manage") && <ExchangeRate />}
       <PackageRules />
       <Appearance />
       <SavedData />

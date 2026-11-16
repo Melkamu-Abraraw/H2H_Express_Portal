@@ -1,8 +1,12 @@
 import { formatMoney } from "@/components/admin/pricing-store";
+import { otherCurrency } from "@/lib/exchange";
+import { useExchangeRates } from "@/components/admin/exchange-store";
 import { balanceDue, currencyOf } from "@/components/admin/package-payments";
 
 export function PaymentCell({ pkg }) {
   const due = balanceDue(pkg);
+  const rate = useExchangeRates();
+  const other = otherCurrency(pkg, due, rate);
   const currency = currencyOf(pkg);
 
   if (due === 0) {
@@ -21,6 +25,7 @@ export function PaymentCell({ pkg }) {
         Pending
       </span>
       <span className="text-xs text-status-warn">{formatMoney(due, currency)} due</span>
+      {other && <span className="text-xs text-muted-foreground">≈ {other}</span>}
     </div>
   );
 }

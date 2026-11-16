@@ -13,6 +13,8 @@ import {
 } from "@/components/admin/package-payments";
 import { statusDots } from "@/components/admin/package-views";
 import { formatMoney } from "@/components/admin/pricing-store";
+import { useExchangeRates } from "@/components/admin/exchange-store";
+import { otherCurrency } from "@/lib/exchange";
 import { useRoutes } from "@/components/admin/routes-store";
 import { useSettings } from "@/components/admin/settings-store";
 import { ALL, Filter, relativeDay } from "@/components/admin/table-filters";
@@ -241,6 +243,7 @@ function EmptyRow({ colSpan, children }) {
 
 function BalanceCell({ pkg }) {
   const due = balanceDue(pkg);
+  const rate = useExchangeRates();
   if (due === 0) {
     return (
       <span className="inline-flex items-center gap-1.5 text-status-good">
@@ -250,8 +253,11 @@ function BalanceCell({ pkg }) {
     );
   }
   return (
-    <span className="font-mono text-[13px] font-semibold text-status-warn">
+    <span className="flex flex-col items-end font-mono text-[13px] font-semibold text-status-warn">
       {formatMoney(due, currencyOf(pkg))}
+      {otherCurrency(pkg, due, rate) && (
+        <span className="text-xs font-normal text-muted-foreground">≈ {otherCurrency(pkg, due, rate)}</span>
+      )}
     </span>
   );
 }

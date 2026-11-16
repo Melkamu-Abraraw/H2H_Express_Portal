@@ -9,6 +9,7 @@ function plural(count, word) {
 
 function buildStats(packages, today, pickupDays) {
   const byStatus = (status) => packages.filter((item) => item.status === status);
+  const received = byStatus("Received").length;
   const inTransit = byStatus("In transit").length;
   const pickup = byStatus("Ready for pickup");
   const waiting = pickup.filter(
@@ -21,6 +22,13 @@ function buildStats(packages, today, pickupDays) {
   const express = packages.filter((item) => item.shipping === "express").length;
 
   return [
+    {
+      label: "Received",
+      dot: statusDots.Received,
+      value: [received],
+      filter: { key: "status", value: "Received" },
+      detail: <span className="text-muted-foreground">At the branch, not yet shipped</span>,
+    },
     {
       label: "In transit",
       dot: statusDots["In transit"],
@@ -78,7 +86,7 @@ const cardClass =
 
 export function PackageStats({ items, today, pickupDays, filters, onSelect }) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       {buildStats(items, today, pickupDays).map(({ label, dot, value, detail, filter }) => {
         const body = (
           <>

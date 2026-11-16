@@ -1,4 +1,7 @@
-import { trackingSteps } from "@/components/admin/package-tracking";
+import { stepsFor, trackingSteps } from "@/components/admin/package-tracking";
+import { handlingLabels } from "@/lib/handling";
+import { otherCurrency } from "@/lib/exchange";
+import { getExchangeRates } from "@/lib/server/exchange";
 
 const API = "https://api.telegram.org";
 
@@ -80,16 +83,18 @@ export function replyHelp() {
 
 function stepLabel(pkg) {
   const key = pkg.events.at(-1).step;
-  return trackingSteps(pkg.route).find((step) => step.key === key)?.label ?? key;
+  return stepsFor(pkg).find((step) => step.key === key)?.label ?? key;
 }
 
 // The card shown in the group. It is edited in place as the package moves, so one post
 // per package always shows its latest status.
-export function packageText(pkg) {
+export function packageText(pkg, rate = null) {
   const express = pkg.shipping === "express";
   const last = pkg.events.at(-1);
   const items = pkg.items.map((item) => `• ${escapeHtml(item.description)} × ${item.qty} (${item.kg} kg)`).join("\n");
   const delivered = last.step === "delivered";
+  const due = Math.max(0, Math.round((pkg.charge - pkg.amountPaid) * 100) / 100);
+  const other = otherCurrency(pkg, due, rate);
   return [
     `📦 <b>${escapeHtml(pkg.tracking)}</b> · ${express ? "🚨 EXPRESS" : "Normal"}`,
     `${escapeHtml(pkg.from)} → ${escapeHtml(pkg.to)} · ${pkg.weight} kg`,
@@ -99,6 +104,10 @@ export function packageText(pkg) {
     `<b>Sender:</b> ${escapeHtml(pkg.senderContact.name)} ${escapeHtml(pkg.senderContact.phone)}`,
     `<b>Receiver:</b> ${escapeHtml(pkg.receiverContact.name)} ${escapeHtml(pkg.receiverContact.phone)}`,
     `<b>Drop-off:</b> ${escapeHtml(pkg.branch.name)}`,
+    ...(handlingLabels(pkg.handling).length ? [`⚠️ <b>${escapeHtml(handlingLabels(pkg.handling).join(" · "))}</b>`] : []),
+    ...(due > 0
+      ? [`<b>Balance due:</b> ${escapeHtml(pkg.currency ?? "CAD")} ${due.toFixed(2)}${other ? ` ≈ ${other}` : ""}`]
+      : []),
     "",
     items,
     ...(pkg.notes ? ["", `<b>Notes:</b> ${escapeHtml(pkg.notes)}`] : []),
@@ -109,8 +118,10 @@ export function packageText(pkg) {
 export function packageKeyboard(pkg) {
   const keys = trackingSteps(pkg.route).map((step) => step.key);
   const at = keys.indexOf(pkg.events.at(-1).step);
+  const labels = new Map(stepsFor(pkg).map((step) => [step.key, step.label]));
+  // Same wording as the portal's timeline; the first step (received) is never a button.
   const buttons = REPLY_STEPS.filter((step) => keys.indexOf(step.key) > at).map((step) => ({
-    text: step.label,
+    text: labels.get(step.key) ?? step.label,
     callback_data: `s:${pkg.tracking}:${step.key}`,
   }));
   const rows = [];
@@ -119,10 +130,10 @@ export function packageKeyboard(pkg) {
 }
 
 // Posts a newly registered package to the group; returns where it landed so replies can be matched.
-export async function announcePackage(pkg) {
+export async function announcePackage(pkg, rate = null) {
   if (!telegramConfigured()) return { status: "not-configured" };
   try {
-    const message = await sendMessage(packageText(pkg), { replyMarkup: packageKeyboard(pkg) });
+    const message = await sendMessage(packageText(pkg, rate), { replyMarkup: packageKeyboard(pkg) });
     return { status: "sent", chatId: String(message.chat.id), messageId: message.message_id };
   } catch (error) {
     console.error("Telegram post failed", error);
@@ -138,9 +149,10 @@ export async function syncPackagePosts(db, trackings) {
     .collection("packages")
     .find({ tracking: { $in: trackings }, "telegram.messageId": { $exists: true } }, { projection: { photos: 0 } })
     .toArray();
+  const rate = await getExchangeRates(db).catch(() => null);
   await Promise.all(
     packages.map((pkg) =>
-      editMessage(pkg.telegram.chatId, pkg.telegram.messageId, packageText(pkg), packageKeyboard(pkg)).catch((error) =>
+      editMessage(pkg.telegram.chatId, pkg.telegram.messageId, packageText(pkg, rate), packageKeyboard(pkg)).catch((error) =>
         console.error("Syncing Telegram post failed", error),
       ),
     ),

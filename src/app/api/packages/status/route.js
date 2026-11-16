@@ -1,3 +1,4 @@
+import { requireAccess } from "@/lib/server/auth";
 import { getDb } from "@/lib/server/mongodb";
 import { moveToStep } from "@/lib/server/package-status";
 import { syncPackagePosts } from "@/lib/server/telegram";
@@ -6,6 +7,8 @@ import { syncPackagePosts } from "@/lib/server/telegram";
 // Body: { trackings: [...], step: "departed" | "arrived" | ... }
 // A package is only marked delivered once it is paid in full.
 export async function POST(request) {
+  const access = await requireAccess("packages.status");
+  if (access.denied) return access.denied;
   let body;
   try {
     body = await request.json();
@@ -22,7 +25,18 @@ export async function POST(request) {
 
   try {
     const db = await getDb();
-    const { moved, skipped, unpaid, missing } = await moveToStep(db, trackings, step);
+    // Packages outside the user's branch count as missing, just like ones that don't exist.
+    const allowed = Object.keys(access.scope).length
+      ? await db
+          .collection("packages")
+          .find({ tracking: { $in: trackings }, ...access.scope }, { projection: { _id: 0, tracking: 1 } })
+          .toArray()
+          .then((rows) => rows.map((row) => row.tracking))
+      : trackings;
+    const outside = trackings.filter((tracking) => !allowed.includes(tracking));
+    const result = await moveToStep(db, allowed, step, access.user.name);
+    const { moved, skipped, unpaid } = result;
+    const missing = [...result.missing, ...outside];
     // Mirror the change in the Telegram group; failures are logged, not fatal.
     await syncPackagePosts(db, moved.map((pkg) => pkg.tracking));
     return Response.json({ success: true, moved, skipped, unpaid, missing });

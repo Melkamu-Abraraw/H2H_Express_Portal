@@ -106,7 +106,7 @@ function CardBody({ customer, onClose }) {
                     <span className="inline-flex min-w-0 items-center gap-1.5">
                       <span className="truncate">{receiver.name}</span>
                       <span className="text-muted-foreground">·</span>
-                      <Flag className="h-3 w-4 shrink-0 rounded-[2px]" aria-hidden="true" />
+                      <Flag className="h-3 w-4 shrink-0 rounded-[1px]" aria-hidden="true" />
                       <span className="truncate text-muted-foreground">{receiver.city}</span>
                     </span>
                     <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">

@@ -1,25 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, LoaderCircle, Search } from "lucide-react";
+import { Download, LoaderCircle, Search, StickyNote } from "lucide-react";
 import { endOfDay, format, startOfDay, startOfMonth } from "date-fns";
+import { HANDLING } from "@/lib/handling";
 import { BulkStatusBar } from "@/components/admin/bulk-status-bar";
 import { downloadPackagesCsv } from "@/components/admin/export-packages";
 import { DateRangePicker, useToday } from "@/components/admin/date-range-picker";
 import { PackageRowActions } from "@/components/admin/package-row-actions";
+import { useProfile } from "@/components/admin/profile-store";
+import { can } from "@/lib/permissions";
 import { PaymentCell } from "@/components/admin/payment-cell";
 import { blockedByPayment } from "@/components/admin/package-payments";
-import { canMoveTo, trackingSteps } from "@/components/admin/package-tracking";
+import { canMoveTo } from "@/components/admin/package-tracking";
 import { PackageStats } from "@/components/admin/package-stats";
 import { useSettings } from "@/components/admin/settings-store";
 import { statusDots } from "@/components/admin/package-views";
 import { ALL, Filter, relativeDay } from "@/components/admin/table-filters";
-import { PackageRouteLabel } from "@/components/admin/shipping-routes";
+import { PackageRouteFlags, PackageRouteLabel } from "@/components/admin/shipping-routes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Table,
   TableBody,
@@ -55,6 +59,46 @@ const paymentOptions = [
   { value: "Pending", label: "Pending" },
 ];
 
+// Flagged and not yet delivered, matching the dashboard's issue alerts.
+const handlingOptions = [
+  { value: ALL, label: "All handling" },
+  ...HANDLING.map(({ key, label }) => ({ value: key, label })),
+];
+
+function NotesCell({ pkg }) {
+  const flags = HANDLING.filter((item) => pkg.handling?.flags?.includes(item.key));
+  if (!flags.length && !pkg.notes) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {flags.map((item) => (
+        <Badge
+          key={item.key}
+          variant="outline"
+          className={item.severity === "critical" ? "border-status-bad/40 text-status-bad" : undefined}
+        >
+          {item.key === "rush" && pkg.handling.rushBy ? `Rush · ${pkg.handling.rushBy}` : item.label}
+        </Badge>
+      ))}
+      {pkg.notes && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Notes for ${pkg.tracking}: ${pkg.notes}`}
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <StickyNote className="size-4" aria-hidden="true" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="block max-w-xs text-left leading-snug">
+            <span className="line-clamp-8 break-words whitespace-pre-wrap">{pkg.notes}</span>
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  );
+}
+
 const statusOptions = [
   { value: ALL, label: "All statuses" },
   ...Object.keys(statusDots).map((status) => ({
@@ -63,17 +107,22 @@ const statusOptions = [
   })),
 ];
 
-export function PackagesTable({ status }) {
+export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
+  const profile = useProfile();
+  const canUpdate = can(profile, "packages.status");
+  const canCollect = can(profile, "payments.record");
   const [records, setRecords] = useState([]);
   const [load, setLoad] = useState({ state: "loading" });
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [route, setRoute] = useState(ALL);
   const [payment, setPayment] = useState(ALL);
   const [statusFilter, setStatusFilter] = useState(ALL);
+  const [handling, setHandling] = useState(initialHandling ?? ALL);
   const [selected, setSelected] = useState(() => new Set());
   const [bulkResult, setBulkResult] = useState(null);
   // undefined = default (this month to date), null = all time.
-  const [pickedRange, setPickedRange] = useState(undefined);
+  // Coming from an alert or a tracking link, show every date so nothing is hidden.
+  const [pickedRange, setPickedRange] = useState(initialHandling || initialSearch ? null : undefined);
   const today = useToday();
   const settings = useSettings();
   const dateRange =
@@ -138,12 +187,13 @@ export function PackagesTable({ status }) {
       (route === ALL || item.route === route) &&
       (payment === ALL || item.payment === payment) &&
       (statusFilter === ALL || item.status === statusFilter) &&
+      (handling === ALL || (item.events.at(-1).step !== "delivered" && item.handling?.flags?.includes(handling))) &&
       (!term ||
         [item.tracking, item.sender, item.receiver].some((text) =>
           text.toLowerCase().includes(term),
         )),
   );
-  const filtered = term || route !== ALL || payment !== ALL || statusFilter !== ALL;
+  const filtered = term || route !== ALL || payment !== ALL || statusFilter !== ALL || handling !== ALL;
   // Only rows still on screen count as selected, so hidden rows are never changed.
   const selectedRows = visible.filter((item) => selected.has(item.tracking));
   const allSelected = visible.length > 0 && selectedRows.length === visible.length;
@@ -195,6 +245,7 @@ export function PackagesTable({ status }) {
     setRoute(ALL);
     setPayment(ALL);
     setStatusFilter(ALL);
+    setHandling(ALL);
   }
 
   function selectStat(key, value) {
@@ -245,6 +296,12 @@ export function PackagesTable({ status }) {
             options={routeOptions}
           />
           <Filter
+            label="Filter by special handling"
+            value={handling}
+            onChange={setHandling}
+            options={handlingOptions}
+          />
+          <Filter
             label="Filter by payment"
             value={payment}
             onChange={setPayment}
@@ -269,7 +326,7 @@ export function PackagesTable({ status }) {
           </Button>
         </CardHeader>
         <CardContent className="px-0">
-          {selectedRows.length > 0 && (
+          {canUpdate && selectedRows.length > 0 && (
             <BulkStatusBar
               selected={selectedRows}
               onApply={applyBulk}
@@ -286,7 +343,8 @@ export function PackagesTable({ status }) {
           >
             {bulkResult?.text}
           </p>
-          <Table>
+          {/* Tighter cells and wrapping notes so the rows fit without scrolling sideways. */}
+          <Table className="[&_td:not(:first-child):not(:last-child)]:px-2 [&_th:not(:first-child):not(:last-child)]:px-2">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10 pl-4">
@@ -303,6 +361,7 @@ export function PackagesTable({ status }) {
                 <TableHead className="text-muted-foreground">Route</TableHead>
                 <TableHead className="text-muted-foreground">Status</TableHead>
                 <TableHead className="text-muted-foreground">Payment</TableHead>
+                <TableHead className="text-muted-foreground">Notes</TableHead>
                 <TableHead className="text-right text-muted-foreground">Weight</TableHead>
                 <TableHead className="text-muted-foreground">Updated</TableHead>
                 <TableHead className="pr-4 text-right text-muted-foreground">
@@ -325,10 +384,10 @@ export function PackagesTable({ status }) {
                     />
                   </TableCell>
                   <TableCell className="font-mono text-[13px]">{item.tracking}</TableCell>
-                  <TableCell>{item.sender}</TableCell>
-                  <TableCell>{item.receiver}</TableCell>
+                  <TableCell className="max-w-32 truncate" title={item.sender}>{item.sender}</TableCell>
+                  <TableCell className="max-w-32 truncate" title={item.receiver}>{item.receiver}</TableCell>
                   <TableCell>
-                    <PackageRouteLabel pkg={item} />
+                    <PackageRouteFlags pkg={item} />
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">
@@ -338,13 +397,12 @@ export function PackagesTable({ status }) {
                       />
                       {item.status}
                     </Badge>
-                    {/* "In transit" covers several steps, so say which one the package is at. */}
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {trackingSteps(item.route).find((step) => step.key === item.events.at(-1).step)?.label}
-                    </p>
                   </TableCell>
                   <TableCell>
                     <PaymentCell pkg={item} />
+                  </TableCell>
+                  <TableCell className="max-w-44 whitespace-normal">
+                    <NotesCell pkg={item} />
                   </TableCell>
                   <TableCell className="text-right font-mono">
                     {item.weight.toFixed(1)} kg
@@ -362,6 +420,8 @@ export function PackagesTable({ status }) {
                   <TableCell className="pr-4">
                     <PackageRowActions
                       pkg={item}
+                      canUpdate={canUpdate}
+                      canCollect={canCollect}
                       onCollect={async ({ amount, method, branch }) => {
                         // Pickup payment first, then release the package.
                         const paid = await readResult(
@@ -397,7 +457,7 @@ export function PackagesTable({ status }) {
               {visible.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={10}
+                    colSpan={11}
                     className={`h-32 text-center ${load.state === "error" ? "text-status-bad" : "text-muted-foreground"}`}
                   >
                     {load.state === "loading" ? (

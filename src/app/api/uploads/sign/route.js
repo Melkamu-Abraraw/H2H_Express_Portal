@@ -1,7 +1,10 @@
+import { requireAccess } from "@/lib/server/auth";
 import { cloudinaryConfig, PACKAGE_PHOTO_FOLDER, signUpload } from "@/lib/server/cloudinary";
 
 // POST /api/uploads/sign: signature for uploading package photos directly to Cloudinary.
 export async function POST() {
+  const access = await requireAccess("packages.create");
+  if (access.denied) return access.denied;
   try {
     const { cloud_name: cloudName, api_key: apiKey } = cloudinaryConfig();
     const timestamp = Math.round(Date.now() / 1000);

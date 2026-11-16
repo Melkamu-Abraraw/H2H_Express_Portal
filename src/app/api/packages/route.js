@@ -1,6 +1,9 @@
+import { parseHandling } from "@/lib/handling";
+import { requestScope, requireAccess } from "@/lib/server/auth";
 import { isOwnPhoto } from "@/lib/server/cloudinary";
 import { emailConfigured, sendPackageConfirmation } from "@/lib/server/email";
 import { getDb, nextSequence } from "@/lib/server/mongodb";
+import { getExchangeRates } from "@/lib/server/exchange";
 import { announcePackage } from "@/lib/server/telegram";
 
 const FIRST_RECEIPT = 1000;
@@ -32,6 +35,12 @@ function contact(value = {}, who) {
     phone: text(value.phone, `${who} phone`),
     address: text(value.address, `${who} address`),
   };
+}
+
+function handlingFields(value) {
+  const handling = parseHandling(value);
+  if (value?.flags?.includes?.("rush") && !handling?.rushBy) throw new InvalidRequest("Choose the date a rush package must arrive by");
+  return handling ? { handling } : {};
 }
 
 function parsePackage(body) {
@@ -73,6 +82,7 @@ function parsePackage(body) {
     items: parsedItems,
     weight: Math.round(parsedItems.reduce((sum, item) => sum + item.kg, 0) * 100) / 100,
     notes: text(body.notes, "Notes", { required: false, max: 2000 }),
+    ...handlingFields(body.handling),
     photos: photos.map(({ url, publicId, width, height }) => ({
       url,
       publicId,
@@ -83,7 +93,8 @@ function parsePackage(body) {
     charge,
     amountPaid: paid,
     method,
-    cashier: text(body.payment?.cashier, "Cashier", { max: 120 }),
+    // Filled in from the session by POST.
+    cashier: "",
   };
 }
 
@@ -125,18 +136,22 @@ const LIST_FIELDS = {
   weight: 1,
   shipping: 1,
   cashier: 1,
+  notes: 1,
+  handling: 1,
   date: 1,
 };
 
-// GET /api/packages: every registered package, newest first.
+// GET /api/packages: every package the user's branch can see, newest first.
 export async function GET(request) {
+  const access = await requireAccess("packages.view");
+  if (access.denied) return access.denied;
   try {
     const db = await getDb();
     // ?recent=1: the latest registrations only, for the notifications menu.
     if (new URL(request.url).searchParams.has("recent")) {
       const packages = await db
         .collection("packages")
-        .find({}, { projection: { _id: 0, tracking: 1, sender: 1, receiver: 1, route: 1, cashier: 1, createdAt: 1 } })
+        .find(access.scope, { projection: { _id: 0, tracking: 1, sender: 1, receiver: 1, route: 1, from: 1, to: 1, shipping: 1, cashier: 1, createdAt: 1 } })
         .sort({ createdAt: -1 })
         .limit(20)
         .toArray();
@@ -144,7 +159,7 @@ export async function GET(request) {
     }
     const packages = await db
       .collection("packages")
-      .find({}, { projection: LIST_FIELDS })
+      .find(access.scope, { projection: LIST_FIELDS })
       .sort({ createdAt: -1 })
       .toArray();
     return Response.json({ success: true, packages });
@@ -156,6 +171,9 @@ export async function GET(request) {
 
 // POST /api/packages: registers a package at the branch and records its payment.
 export async function POST(request) {
+  const access = await requireAccess("packages.create");
+  if (access.denied) return access.denied;
+
   let input;
   let body;
   try {
@@ -165,6 +183,16 @@ export async function POST(request) {
     const message = error instanceof InvalidRequest ? error.message : "Request body isn't valid JSON";
     return Response.json({ success: false, error: message }, { status: 400 });
   }
+  // Staff tied to a branch register packages there only.
+  const ownBranch = access.user.branch?.code;
+  if (ownBranch && input.branch.code !== ownBranch) {
+    return Response.json(
+      { success: false, error: `You can only register packages at ${access.user.branch.name}` },
+      { status: 403 },
+    );
+  }
+  // The receipt names whoever is signed in, whatever the browser sent.
+  input.cashier = access.user.name;
 
   const requestCode = typeof body?.requestCode === "string" ? body.requestCode : "";
   let claimed = false;
@@ -174,7 +202,10 @@ export async function POST(request) {
     if (requestCode) {
       const claim = await db
         .collection("requests")
-        .updateOne({ code: requestCode, status: "pending" }, { $set: { status: "registering" } });
+        .updateOne(
+          { code: requestCode, status: "pending", ...requestScope(access.user) },
+          { $set: { status: "registering" } },
+        );
       if (!claim.matchedCount) {
         return Response.json({ success: false, error: "That request was already handled" }, { status: 409 });
       }
@@ -198,7 +229,7 @@ export async function POST(request) {
       receiver: input.receiverContact.name,
       // Registered at the branch, so the package is already received there.
       events: [{ step: "received", date: now }],
-      status: "In transit",
+      status: "Received",
       payment: input.amountPaid >= input.charge ? "Paid" : "Pending",
       // How the customer chose to pay at drop-off, and who registered the package.
       paymentMethod: method,
@@ -232,7 +263,7 @@ export async function POST(request) {
 
     // The package is saved either way; email trouble is reported, not fatal.
     const trackUrl = `${siteUrl(request)}/track/${encodeURIComponent(tracking)}`;
-    const [email, telegram] = await Promise.all([emailSender(pkg, trackUrl), announcePackage(pkg)]);
+    const [email, telegram] = await Promise.all([emailSender(pkg, trackUrl), announcePackage(pkg, await getExchangeRates(db).catch(() => null))]);
     await db
       .collection("packages")
       .updateOne(

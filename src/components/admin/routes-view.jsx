@@ -16,7 +16,7 @@ const SPEEDS = [
   { value: "express", label: "Express" },
 ];
 
-const ACTIVE_STATUSES = ["In transit", "Ready for pickup"];
+const ACTIVE_STATUSES = ["Received", "In transit", "Ready for pickup"];
 
 function routeSummary(code) {
   const onRoute = packages.filter((item) => item.route === code);
@@ -173,7 +173,7 @@ function RouteCard({ route, rates }) {
         <EditRouteButton route={route} />
       </CardHeader>
       <CardContent className="grid gap-5">
-        <dl className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-2 md:grid-cols-5">
           <Figure label="Packages">{summary.total}</Figure>
           {ACTIVE_STATUSES.map((status) => (
             <Figure

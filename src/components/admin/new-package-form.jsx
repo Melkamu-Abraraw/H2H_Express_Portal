@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Check, ImagePlus, MapPin, Plus, Truck, UserCheck, X, Zap } from "lucide-react";
-import { CURRENT_USER } from "@/components/admin/current-user";
+import { HANDLING } from "@/lib/handling";
+import { useProfile } from "@/components/admin/profile-store";
 import { PackageReceiptDialog } from "@/components/admin/package-receipt";
 import { uploadPackagePhotos } from "@/lib/upload-photos";
 import { formatMoney, getRate, useShippingRates } from "@/components/admin/pricing-store";
@@ -170,6 +171,7 @@ function SummaryRow({ label, children }) {
 }
 
 export function NewPackageForm({ prefill = null }) {
+  const profile = useProfile();
   const initialDirection = prefill?.direction ?? "CAET";
   const [direction, setDirection] = useState(initialDirection);
   const [shipping, setShipping] = useState(prefill?.shipping ?? "normal");
@@ -195,6 +197,8 @@ export function NewPackageForm({ prefill = null }) {
   const [customerPhotos, setCustomerPhotos] = useState(prefill?.photos ?? []);
   const [photos, setPhotos] = useState([]);
   const [submitted, setSubmitted] = useState(false);
+  const [handling, setHandling] = useState([]);
+  const [rushBy, setRushBy] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [amountPaid, setAmountPaid] = useState("");
   const [receipt, setReceipt] = useState(null);
@@ -212,14 +216,22 @@ export function NewPackageForm({ prefill = null }) {
     return () => urls.forEach((url) => URL.revokeObjectURL(url));
   }, []);
 
-  const routes = useRoutes();
+  const allRoutes = useRoutes();
+  // Staff tied to a branch register drop-offs there only (the server enforces this too), so
+  // they get the routes that branch serves and no branch choice.
+  const ownBranch = profile.branch?.code;
+  const ownRoutes = ownBranch ? allRoutes.filter((route) => ownBranch in route.branches) : allRoutes;
+  const routes = ownRoutes.length ? ownRoutes : allRoutes;
   const routeOf = (code) => routes.find((route) => route.code === code) ?? routes[0];
   const directionConfig = routeOf(direction);
-  const branches = Object.entries(directionConfig.branches);
+  const branches = Object.entries(directionConfig.branches).filter(
+    ([code]) => !ownBranch || !ownRoutes.length || code === ownBranch,
+  );
   // Branches can be edited on the Routes page, so fall back if the chosen one was removed.
-  const activeBranchCode = directionConfig.branches[branchCode]
+  const allowedCodes = new Set(branches.map(([code]) => code));
+  const activeBranchCode = allowedCodes.has(branchCode)
     ? branchCode
-    : directionConfig.defaultBranch in directionConfig.branches
+    : allowedCodes.has(directionConfig.defaultBranch)
       ? directionConfig.defaultBranch
       : branches[0][0];
   const branch = directionConfig.branches[activeBranchCode];
@@ -312,7 +324,7 @@ export function NewPackageForm({ prefill = null }) {
   async function handleSubmit(event) {
     event.preventDefault();
     if (saving.state === "uploading" || saving.state === "saving") return;
-    const cashier = CURRENT_USER.name;
+    const cashier = profile.name;
     const elements = event.currentTarget.elements;
     const value = (name) => elements[name]?.value.trim() ?? "";
     const charge = fee ?? 0;
@@ -357,6 +369,7 @@ export function NewPackageForm({ prefill = null }) {
           receiver: receiverDetails,
           items: packageItems,
           notes: value("notes"),
+          handling: { flags: handling, rushBy },
           photos: [...customerPhotos, ...uploaded],
           ...(prefill?.requestCode && { requestCode: prefill.requestCode }),
           currency,
@@ -485,6 +498,16 @@ export function NewPackageForm({ prefill = null }) {
                   </SelectContent>
                 </Select>
               </div>
+            )}
+
+            {ownBranch && !ownRoutes.length && (
+              <Alert className="border-status-bad/40">
+                <AlertTitle>No route starts at your branch</AlertTitle>
+                <AlertDescription>
+                  {profile.branch.name} isn&apos;t a drop-off branch on any route, so you can&apos;t register
+                  packages. Ask an owner to add it on the Routes page or change your branch.
+                </AlertDescription>
+              </Alert>
             )}
 
             <Alert className="border-brand/60 bg-sidebar-accent">
@@ -752,13 +775,43 @@ export function NewPackageForm({ prefill = null }) {
             id="step-notes"
             step="05"
             title="Notes"
-            description="Optional details for the team."
+            description="Flag anything the team must treat differently, and add optional details."
           >
+            <div className="grid gap-2">
+              <Label>Special handling</Label>
+              {/* One joined bar: the options sit edge to edge like a single long button. */}
+              <ToggleGroup
+                type="multiple"
+                value={handling}
+                onValueChange={setHandling}
+                variant="outline"
+                aria-label="Special handling"
+                className="w-full"
+              >
+                {HANDLING.map(({ key, label }) => (
+                  <ToggleGroupItem key={key} value={key} className="h-9 flex-1 px-2 text-sm">
+                    {label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+              {handling.includes("rush") && (
+                <div className="grid max-w-xs gap-1.5">
+                  <Label htmlFor="rush-by">Must arrive before</Label>
+                  <Input
+                    id="rush-by"
+                    type="date"
+                    required
+                    value={rushBy}
+                    onChange={(event) => setRushBy(event.target.value)}
+                  />
+                </div>
+              )}
+            </div>
             <Textarea
               name="notes"
               defaultValue={prefill?.notes}
               aria-label="Notes"
-              placeholder="e.g. Urgent, Fragile item"
+              placeholder="e.g. Handle with care, call receiver before delivery"
               rows={3}
             />
           </FormSection>
@@ -874,7 +927,7 @@ export function NewPackageForm({ prefill = null }) {
 
             <div className="flex items-baseline justify-between gap-3 text-sm">
               <span className="text-muted-foreground">Cashier</span>
-              <span className="font-medium">{CURRENT_USER.name}</span>
+              <span className="font-medium">{profile.name}</span>
             </div>
 
             <div className="grid gap-2">

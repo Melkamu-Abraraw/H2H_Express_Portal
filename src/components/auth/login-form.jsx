@@ -15,6 +15,13 @@ const field =
 const icon =
   "pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground";
 
+// Where to go after signing in: the admin page that sent the user here (never another site),
+// otherwise the home page for their role.
+function nextPage(home = "/admin") {
+  const next = new URLSearchParams(window.location.search).get("next") ?? "";
+  return /^\/admin(?:[/?#]|$)/.test(next) ? next : home;
+}
+
 export function LoginForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -25,8 +32,9 @@ export function LoginForm() {
 
   const emailOk = EMAIL.test(email.trim());
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
+    if (going) return;
     if (!emailOk) {
       setError("Enter the email address you use for the portal.");
       return;
@@ -37,8 +45,23 @@ export function LoginForm() {
     }
     setError("");
     setGoing(true);
-    // TODO: authenticate against the server once sign-in exists. Until then this just opens the portal.
-    router.push("/admin");
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.success) {
+        setError(body.error || "Couldn't sign you in. Try again.");
+        setGoing(false);
+        return;
+      }
+      router.replace(nextPage(body.home));
+    } catch {
+      setError("Couldn't reach the server. Check your connection and try again.");
+      setGoing(false);
+    }
   }
 
   function edit(setter) {
@@ -94,12 +117,14 @@ export function LoginForm() {
         </div>
       </div>
 
-      <a
-        href="mailto:support@h2hexpress.com?subject=Portal%20password%20reset"
-        className="mt-3 justify-self-end text-sm font-medium text-brand-dark underline-offset-4 hover:underline dark:text-brand"
+      {/* Switched off for now; restore the mailto link below when password reset is ready.
+          href="mailto:support@h2hexpress.com?subject=Portal%20password%20reset" */}
+      <span
+        aria-disabled="true"
+        className="mt-3 cursor-not-allowed justify-self-end text-sm font-medium text-muted-foreground/60 select-none"
       >
         Forgot password?
-      </a>
+      </span>
 
       {error && (
         <p role="alert" className="mt-4 text-sm text-destructive">
@@ -111,9 +136,10 @@ export function LoginForm() {
         type="submit"
         size="lg"
         disabled={going}
-        className="group mt-6 h-14 rounded-md bg-neutral-700 text-base font-semibold text-brand shadow-sm hover:bg-neutral-600"
+        aria-busy={going}
+        className="group mt-6 h-14 rounded-md bg-neutral-700 font-loading text-base font-semibold text-brand shadow-sm hover:bg-neutral-600"
       >
-        Sign in
+        {going ? "Signing in…" : "Sign in"}
         <span
           className="grid place-items-center text-brand transition-transform duration-200 group-hover:translate-x-0.5"
           aria-hidden="true"

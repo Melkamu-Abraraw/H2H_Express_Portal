@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
-import { Bell, Inbox, Package, UserPlus } from "lucide-react";
+import { Bell, Check, Inbox, Package, UserPlus } from "lucide-react";
+import { can, roleLabel } from "@/lib/permissions";
+import { useProfile } from "@/components/admin/profile-store";
 import { useStaff } from "@/components/admin/staff-store";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 // What this browser has already dealt with. Notifications start from the first visit, so a
@@ -36,35 +37,53 @@ async function getJson(url) {
   return result;
 }
 
+// "< 1 min ago", "5 min ago", "3 h ago", "2 d ago": short, so it never crowds the row.
+function ago(time) {
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(time)) / 60000));
+  if (minutes < 1) return "< 1 min ago";
+  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)} h ago`;
+  return `${Math.floor(minutes / 1440)} d ago`;
+}
+
 const KINDS = {
-  request: { icon: Inbox, href: "/admin/requests" },
-  package: { icon: Package, href: "/admin/packages" },
-  staff: { icon: UserPlus, href: "/admin/staff" },
+  request: { icon: Inbox, href: "/admin/requests", label: "Needs review" },
+  package: { icon: Package, href: "/admin/packages", label: "New package" },
+  staff: { icon: UserPlus, href: "/admin/staff", label: "New staff" },
 };
 
+// "Canada → Ethiopia · Express · 2 items": the facts staff need before opening it.
+function facts({ from, to, shipping, items }) {
+  return [
+    from && to && `${from} → ${to}`,
+    shipping && (shipping === "express" ? "Express" : "Normal"),
+    items && `${items} ${items === 1 ? "item" : "items"}`,
+  ].filter(Boolean);
+}
+
 export function NotificationsMenu() {
-  const staff = useStaff();
-  const staffRef = useRef(staff);
-  useEffect(() => {
-    staffRef.current = staff;
-  });
+  const profile = useProfile();
+  const seeRequests = can(profile, "requests.view");
+  const seePackages = can(profile, "packages.view");
+  // Only owners can see the team, so only they hear about new staff.
+  const { staff } = useStaff(can(profile, "staff.manage"));
   const [store, setStore] = useState(null);
   const [data, setData] = useState({ requests: [], packages: [] });
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
+    if (!profile.loaded) return;
     let cancelled = false;
     function load() {
-      Promise.all([getJson("/api/requests"), getJson("/api/packages?recent=1")])
+      Promise.all([
+        seeRequests ? getJson("/api/requests") : { requests: [] },
+        seePackages ? getJson("/api/packages?recent=1") : { packages: [] },
+      ])
         .then(([requests, packages]) => {
           if (cancelled) return;
           let current = readStore();
           if (!current) {
-            current = {
-              baseline: new Date().toISOString(),
-              staffIds: staffRef.current.map((member) => member.id),
-              done: [],
-            };
+            current = { baseline: new Date().toISOString(), done: [] };
             writeStore(current);
           }
           setStore(current);
@@ -78,19 +97,19 @@ export function NotificationsMenu() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, []);
+  }, [profile.loaded, seeRequests, seePackages]);
 
   const todos = [];
   if (store) {
     const done = new Set(store.done);
-    const known = new Set(store.staffIds);
     // Requests stay on the list until someone registers or rejects them.
     for (const request of data.requests) {
       todos.push({
         id: `req:${request.code}`,
         kind: "request",
-        title: `Review request ${request.code}`,
-        detail: `${request.sender.name} → ${request.receiver.name}`,
+        title: `${request.sender.name} → ${request.receiver.name}`,
+        ref: request.code,
+        facts: facts({ from: request.from, to: request.to, shipping: request.shipping, items: request.items?.length }),
         time: request.createdAt,
         manual: false,
       });
@@ -100,20 +119,22 @@ export function NotificationsMenu() {
       todos.push({
         id: `pkg:${pkg.tracking}`,
         kind: "package",
-        title: `New package ${pkg.tracking}`,
-        detail: `${pkg.sender} → ${pkg.receiver}${pkg.cashier ? ` · by ${pkg.cashier}` : ""}`,
+        title: `${pkg.sender} → ${pkg.receiver}`,
+        ref: pkg.tracking,
+        facts: [...facts(pkg), pkg.cashier && `by ${pkg.cashier}`].filter(Boolean),
         time: pkg.createdAt,
         manual: true,
       });
     }
     for (const member of staff) {
-      if (known.has(member.id) || done.has(`staff:${member.id}`)) continue;
+      if (!member.createdAt || member.createdAt <= store.baseline || done.has(`staff:${member.id}`)) continue;
       todos.push({
         id: `staff:${member.id}`,
         kind: "staff",
-        title: `New staff: ${member.name}`,
-        detail: member.role,
-        time: member.lastActive,
+        title: member.name,
+        ref: member.email,
+        facts: [roleLabel(member.role), member.status === "active" ? "Activated" : "Invited"],
+        time: member.createdAt,
         manual: true,
       });
     }
@@ -146,8 +167,15 @@ export function NotificationsMenu() {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0 sm:w-96">
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <p className="text-sm font-semibold">To do{todos.length > 0 && ` · ${todos.length}`}</p>
+        <div className="flex items-center justify-between border-b px-4 py-2.5">
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            Notifications
+            {todos.length > 0 && (
+              <span className="rounded-full bg-brand/20 px-1.5 py-0.5 font-mono text-[11px] leading-none text-brand-dark dark:text-brand">
+                {todos.length}
+              </span>
+            )}
+          </p>
           {manual.length > 0 && (
             <button
               type="button"
@@ -165,25 +193,42 @@ export function NotificationsMenu() {
         ) : (
           <ul className="max-h-96 divide-y overflow-y-auto">
             {todos.map((todo) => {
-              const { icon: Icon, href } = KINDS[todo.kind];
+              const { icon: Icon, href, label } = KINDS[todo.kind];
               return (
-                <li key={todo.id} className="flex items-start gap-3 px-4 py-3">
-                  {todo.manual ? (
-                    <Checkbox
-                      className="mt-1"
-                      aria-label={`Mark done: ${todo.title}`}
-                      onCheckedChange={() => markDone([todo.id])}
-                    />
-                  ) : (
-                    <Icon className="mt-1 size-4 shrink-0 text-brand-dark" aria-hidden="true" />
-                  )}
+                <li key={todo.id} className="group relative flex items-start gap-3 px-4 py-2.5 hover:bg-muted/50">
+                  <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-brand/15 text-brand-dark dark:text-brand">
+                    <Icon className="size-4" aria-hidden="true" />
+                  </span>
                   <Link href={href} onClick={() => setOpen(false)} className="grid min-w-0 flex-1 gap-0.5 text-sm">
-                    <span className="font-medium">{todo.title}</span>
-                    <span className="truncate text-muted-foreground">{todo.detail}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(todo.time), { addSuffix: true })}
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span className="text-xs font-medium text-brand-dark dark:text-brand">{label}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {ago(todo.time)}
+                      </span>
+                    </span>
+                    <span className="truncate font-medium">{todo.title}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      <span className="font-mono">{todo.ref}</span>
+                      {todo.facts.map((fact) => ` · ${fact}`).join("")}
                     </span>
                   </Link>
+                  {todo.manual && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={`Mark done: ${todo.title}`}
+                          className="mt-0.5 grid size-7 shrink-0 place-items-center text-muted-foreground transition hover:scale-125 hover:text-status-good active:scale-95 focus-visible:text-status-good focus-visible:outline-none"
+                          onClick={() => markDone([todo.id])}
+                        >
+                          <Check className="size-4" aria-hidden="true" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" sideOffset={6}>
+                        Mark as done
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                 </li>
               );
             })}

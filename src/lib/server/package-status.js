@@ -21,6 +21,8 @@ const FIELDS = {
   weight: 1,
   shipping: 1,
   cashier: 1,
+  notes: 1,
+  handling: 1,
   date: 1,
 };
 

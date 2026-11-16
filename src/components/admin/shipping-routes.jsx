@@ -1,3 +1,4 @@
+import { ArrowRight } from "lucide-react";
 import { COUNTRIES } from "@/components/admin/countries";
 
 const CANADA_BRANCHES = {
@@ -46,7 +47,7 @@ export const DIRECTIONS = {
 export function Country({ country: { name, Flag } }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <Flag className="h-3 w-4 shrink-0 rounded-[2px]" aria-hidden="true" />
+      <Flag className="h-3 w-4 shrink-0 rounded-[1px]" aria-hidden="true" />
       {name}
     </span>
   );
@@ -91,4 +92,19 @@ export function pickupBranchFor(pkg) {
 export function PackageRouteLabel({ pkg }) {
   const { from, to } = packageCountries(pkg);
   return <RouteLabel from={from} to={to} />;
+}
+
+// Flags only, to save space in tables; the country names stay in the tooltip and for screen readers.
+export function PackageRouteFlags({ pkg }) {
+  const { from, to } = packageCountries(pkg);
+  return (
+    <span className="inline-flex items-center gap-1.5" title={`${from.name} to ${to.name}`}>
+      <from.Flag className="h-3 w-4 shrink-0 rounded-[1px]" aria-hidden="true" />
+      <ArrowRight className="size-3 text-muted-foreground" aria-hidden="true" />
+      <to.Flag className="h-3 w-4 shrink-0 rounded-[1px]" aria-hidden="true" />
+      <span className="sr-only">
+        {from.name} to {to.name}
+      </span>
+    </span>
+  );
 }

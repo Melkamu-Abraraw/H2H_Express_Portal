@@ -1,4 +1,4 @@
-import { CURRENT_USER } from "@/components/admin/current-user";
+import { requireAccess } from "@/lib/server/auth";
 import { getDb, nextSequence } from "@/lib/server/mongodb";
 
 const FIRST_RECEIPT = 1000;
@@ -32,12 +32,21 @@ function receiptOut({ _id, receiptNo, ...payment }) {
 
 // GET /api/payments: every package with its balance, and every payment received.
 export async function GET() {
+  const access = await requireAccess("payments.view");
+  if (access.denied) return access.denied;
   try {
     const db = await getDb();
-    const [packages, payments] = await Promise.all([
-      db.collection("packages").find({}, { projection: PACKAGE_FIELDS }).sort({ createdAt: -1 }).toArray(),
-      db.collection("payments").find({}).sort({ date: -1 }).toArray(),
-    ]);
+    const packages = await db
+      .collection("packages")
+      .find(access.scope, { projection: PACKAGE_FIELDS })
+      .sort({ createdAt: -1 })
+      .toArray();
+    // Branch staff see the payments on the packages their branch can see.
+    const payments = await db
+      .collection("payments")
+      .find(Object.keys(access.scope).length ? { tracking: { $in: packages.map((pkg) => pkg.tracking) } } : {})
+      .sort({ date: -1 })
+      .toArray();
     // Older payments have no stage: the one sharing the package's receipt number was taken at
     // drop-off, anything after that at pickup.
     const registrationReceipt = new Map(packages.map((pkg) => [pkg.tracking, pkg.receiptNo]));
@@ -56,6 +65,8 @@ export async function GET() {
 
 // POST /api/payments: records money taken against a package's balance.
 export async function POST(request) {
+  const access = await requireAccess("payments.record");
+  if (access.denied) return access.denied;
   let body;
   try {
     body = await request.json();
@@ -83,7 +94,11 @@ export async function POST(request) {
     // Only applies if it doesn't take the package past what was charged, so two desks
     // collecting at the same moment can't overpay it.
     const updated = await packages.findOneAndUpdate(
-      { tracking, $expr: { $lte: [{ $add: ["$amountPaid", amount] }, { $add: ["$charge", 0.001] }] } },
+      {
+        tracking,
+        ...access.scope,
+        $expr: { $lte: [{ $add: ["$amountPaid", amount] }, { $add: ["$charge", 0.001] }] },
+      },
       [
         { $set: { amountPaid: { $round: [{ $add: ["$amountPaid", amount] }, 2] } } },
         { $set: { payment: { $cond: [{ $gte: ["$amountPaid", "$charge"] }, "Paid", "Pending"] } } },
@@ -91,7 +106,7 @@ export async function POST(request) {
       { returnDocument: "after", projection: PACKAGE_FIELDS },
     );
     if (!updated) {
-      const exists = await packages.countDocuments({ tracking }, { limit: 1 });
+      const exists = await packages.countDocuments({ tracking, ...access.scope }, { limit: 1 });
       return Response.json(
         {
           success: false,
@@ -118,7 +133,8 @@ export async function POST(request) {
           : updated.branch
             ? { code: updated.branch.code, name: updated.branch.name }
             : null,
-      receivedBy: CURRENT_USER.name,
+      // The receipt names whoever is signed in as the person who took the money.
+      receivedBy: access.user.name,
       date: new Date(),
     };
     await db.collection("payments").insertOne(payment);

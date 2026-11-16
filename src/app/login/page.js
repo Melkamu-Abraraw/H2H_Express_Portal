@@ -10,8 +10,8 @@ export const metadata = {
   description: "Sign in to the H2H Express portal.",
 };
 
-// TODO: replace with the real support WhatsApp number (digits only, with country code).
-const SUPPORT_WHATSAPP = "https://wa.me/10000000000";
+// Temporary support number 0994104901, written with Ethiopia's country code (251) for wa.me.
+const SUPPORT_WHATSAPP = "https://wa.me/251994104901";
 
 // Canada and Ethiopia ship both ways; Uganda is one way from Canada.
 const ROUTES = [
@@ -65,7 +65,7 @@ export default function LoginPage() {
             · v1.0
           </span>
         </footer>
-        <p className="mx-auto mt-4 flex w-full max-w-md items-center justify-center gap-2 text-xs text-muted-foreground">
+        <p className="mx-auto mt-4 flex w-full max-w-md items-center justify-center gap-3 text-sm text-muted-foreground">
           Designed and developed by
           <a
             href="https://www.peaceitech.com/"
@@ -80,7 +80,7 @@ export default function LoginPage() {
               alt="Peace iTech"
               width={720}
               height={299}
-              className="h-auto w-14 dark:brightness-0 dark:invert"
+              className="h-auto w-20 dark:brightness-0 dark:invert"
             />
           </a>
         </p>
@@ -89,15 +89,17 @@ export default function LoginPage() {
       {/* The right edge runs on a slant into the form column. */}
       <section className="relative hidden overflow-hidden bg-[#141a2e] [clip-path:polygon(0_0,100%_0,70%_100%,0_100%)] lg:order-1 lg:block">
         <Image
-          src="/login_side.jpg"
+          src="/images/login_image.jpg"
           alt="An H2H Express courier handing a package to a customer at her door"
           fill
           sizes="55vw"
           preload
-          className="origin-top-left scale-90 object-cover object-[50%_22%]"
+          // Serve the original file: Next's resize and re-compression softens a photo this size.
+          unoptimized
+          className="object-cover object-[50%_20%]"
         />
         {/* Navy under the copy so it stays readable over the photo. */}
-        <div className="absolute inset-x-0 bottom-0 h-1/4 bg-linear-to-t from-[#141a2e] via-[#141a2e]/80 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-2/5 bg-linear-to-t from-[#141a2e] via-[#141a2e]/85 to-transparent" />
 
         <div className="absolute inset-x-0 bottom-0 pr-[26%] pb-8 pl-10 text-white xl:pl-12">
           <div className="h-1 w-11 rounded-full bg-brand" aria-hidden="true" />
@@ -110,9 +112,9 @@ export default function LoginPage() {
           <ul className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
             {ROUTES.map(([label, From, To, Arrow]) => (
               <li key={label} className="flex items-center gap-2" role="img" aria-label={label}>
-                <From className="h-3 w-[18px] rounded-[2px]" aria-hidden="true" />
+                <From className="h-3 w-[18px] rounded-[1px]" aria-hidden="true" />
                 <Arrow className="size-3.5 text-white/70" aria-hidden="true" />
-                <To className="h-3 w-[18px] rounded-[2px]" aria-hidden="true" />
+                <To className="h-3 w-[18px] rounded-[1px]" aria-hidden="true" />
               </li>
             ))}
           </ul>

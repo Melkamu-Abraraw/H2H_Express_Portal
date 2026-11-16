@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, Plus } from "lucide-react";
-import { manageNav, mainNav } from "@/components/admin/nav-items";
-import { CURRENT_USER } from "@/components/admin/current-user";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ChevronRight } from "lucide-react";
+import { can } from "@/lib/permissions";
+import { useProfile } from "@/components/admin/profile-store";
+import { SidebarAccount } from "@/components/admin/sidebar-account";
+import { manageNav, mainNav, utilityNav } from "@/components/admin/nav-items";
 import {
   Collapsible,
   CollapsibleContent,
@@ -34,8 +35,8 @@ import {
 const badgeTones = {
   brand: "bg-foreground/10 text-brand-dark dark:text-brand",
   alert: "bg-foreground/10 text-red-700 dark:text-red-500",
-  // Golden yellow text, for things waiting for staff.
-  new: "bg-foreground/10 text-brand-dark dark:text-brand",
+  // Solid yellow with dark text, for things waiting for staff.
+  new: "bg-brand text-black",
 };
 
 function isInSection(pathname, href) {
@@ -56,12 +57,10 @@ function NavButton({ item: { label, href, icon: Icon, badge }, pathname }) {
         <Icon />
         <span>{label}</span>
         {badge && (
+          // Same 20px column as the chevron on expandable items, so the two line up.
           <span
-            className={`inline-flex -translate-y-1 items-center gap-px rounded-full px-1.5 py-0.5 font-mono ${badge.plus ? "text-[12px]" : "text-[10px]"} leading-none font-bold group-data-[collapsible=icon]:hidden ${badgeTones[badge.tone]}`}
+            className={`-mr-1 ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 font-mono text-[11px] leading-none font-bold group-data-[collapsible=icon]:hidden ${badgeTones[badge.tone]}`}
           >
-            {badge.plus && (
-              <Plus className="size-2.5!" strokeWidth={3} aria-hidden="true" />
-            )}
             {badge.count}
           </span>
         )}
@@ -126,9 +125,10 @@ function NavGroup({ items, pathname }) {
 }
 
 // How many public requests are waiting for review; refreshed on every page change and every 15s.
-function usePendingRequests(pathname) {
+function usePendingRequests(pathname, enabled) {
   const [count, setCount] = useState(0);
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     function load() {
       fetch("/api/requests?count=1", { cache: "no-store" })
@@ -147,18 +147,22 @@ function usePendingRequests(pathname) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [pathname]);
-  return count;
+  }, [pathname, enabled]);
+  return enabled ? count : 0;
 }
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const pending = usePendingRequests(pathname);
-  const main = mainNav.map((item) =>
+  const profile = useProfile();
+  const allowed = (items) => items.filter((item) => can(profile, item.permission));
+  const pending = usePendingRequests(pathname, can(profile, "requests.view"));
+  const main = allowed(mainNav).map((item) =>
     item.href === "/admin/requests" && pending > 0
-      ? { ...item, badge: { count: pending, tone: "new", plus: true } }
+      ? { ...item, badge: { count: pending, tone: "new" } }
       : item,
   );
+  const manage = allowed(manageNav);
+  const utility = allowed(utilityNav);
 
   return (
     <Sidebar collapsible="icon">
@@ -192,52 +196,23 @@ export function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
+          <SidebarGroupLabel>Operations</SidebarGroupLabel>
           <SidebarGroupContent>
             <NavGroup items={main} pathname={pathname} />
           </SidebarGroupContent>
         </SidebarGroup>
-        <SidebarGroup>
-          <SidebarGroupLabel>Manage</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <NavGroup items={manageNav} pathname={pathname} />
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {manage.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Manage</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <NavGroup items={manage} pathname={pathname} />
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border">
-        <div className="relative isolate flex min-h-28 items-end gap-2.5 overflow-hidden rounded-lg p-2.5 group-data-[collapsible=icon]:min-h-0 group-data-[collapsible=icon]:overflow-visible group-data-[collapsible=icon]:p-0">
-          <div className="absolute inset-0 -z-10 group-data-[collapsible=icon]:hidden">
-            <Image
-              src="/images/truck%20image_dark.png"
-              alt=""
-              fill
-              sizes="240px"
-              loading="eager"
-              className="object-cover object-[50%_55%] dark:hidden"
-            />
-            <Image
-              src="/images/truck%20image_light.png"
-              alt=""
-              fill
-              sizes="240px"
-              loading="eager"
-              className="hidden object-cover object-[50%_55%] dark:block"
-            />
-            <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/35 to-transparent" />
-          </div>
-          <Avatar className="size-8">
-            <AvatarFallback className="text-xs font-medium">
-              {CURRENT_USER.initials}
-            </AvatarFallback>
-          </Avatar>
-          <div className="grid leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="truncate text-sm font-medium text-white">
-              {CURRENT_USER.name}
-            </span>
-            <span className="truncate text-xs text-white/85">
-              {CURRENT_USER.title}
-            </span>
-          </div>
-        </div>
+        {utility.length > 0 && <NavGroup items={utility} pathname={pathname} />}
+        <SidebarAccount />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

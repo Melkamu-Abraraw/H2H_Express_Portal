@@ -13,6 +13,11 @@ async function connect() {
     db.collection("packages").createIndex({ createdAt: -1 }),
     db.collection("payments").createIndex({ receiptNo: 1 }, { unique: true }),
     db.collection("payments").createIndex({ tracking: 1 }),
+    db.collection("users").createIndex({ email: 1 }, { unique: true }),
+    db.collection("users").createIndex({ "invite.tokenHash": 1 }, { sparse: true }),
+    db.collection("sessions").createIndex({ userId: 1 }),
+    // MongoDB deletes each session once its expiresAt has passed.
+    db.collection("sessions").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
   ]);
   return db;
 }

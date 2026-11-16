@@ -138,10 +138,10 @@ function StatusCell({ person }) {
   );
 }
 
-export function CustomersTable() {
+export function CustomersTable({ initialSearch = "" }) {
   const [people, setPeople] = useState([]);
   const [load, setLoad] = useState({ state: "loading" });
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [type, setType] = useState(ALL);
   const [country, setCountry] = useState(ALL);
   const [balance, setBalance] = useState(ALL);

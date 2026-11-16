@@ -33,7 +33,14 @@ import { useInboxEvents, useOnline, useRealtimeStatus, useTyping } from "@/compo
 import { uploadPhotos } from "@/lib/upload-photos";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -221,23 +228,39 @@ function ConversationList({ list, online, activeId, onOpen, onNew }) {
   );
 }
 
+function Key({ children }) {
+  return (
+    <kbd className="inline-flex h-5 min-w-5 items-center justify-center gap-0.5 rounded border bg-card px-1.5 font-sans text-[11px] font-medium text-foreground shadow-xs">
+      {children}
+    </kbd>
+  );
+}
+
 function NewMessageDialog({ open, onOpenChange, people, online, selfId, onPick }) {
   const [search, setSearch] = useState("");
+  const [active, setActive] = useState(0);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const listRef = useRef(null);
   const term = search.trim().toLowerCase();
-  const others = people.filter(
-    (person) =>
-      person.id !== selfId &&
-      (!term || [person.name, person.title, person.branch].some((text) => text.toLowerCase().includes(term))),
-  );
+  const others = people
+    .filter(
+      (person) =>
+        person.id !== selfId &&
+        (!term || [person.name, person.title, person.branch].some((text) => text.toLowerCase().includes(term))),
+    )
+    // People who are online now come first.
+    .sort((a, b) => Number(online.has(b.id)) - Number(online.has(a.id)) || a.name.localeCompare(b.name));
+  const current = Math.min(active, Math.max(others.length - 1, 0));
 
   async function pick(person) {
+    if (!person || busy) return;
     setBusy(person.id);
     setError("");
     try {
       await onPick(person.id);
       setSearch("");
+      setActive(0);
     } catch (failure) {
       setError(failure.message);
     } finally {
@@ -245,56 +268,142 @@ function NewMessageDialog({ open, onOpenChange, people, online, selfId, onPick }
     }
   }
 
+  function move(step) {
+    if (!others.length) return;
+    const next = (current + step + others.length) % others.length;
+    setActive(next);
+    listRef.current?.querySelector(`[data-index="${next}"]`)?.scrollIntoView({ block: "nearest" });
+  }
+
+  function onKeyDown(event) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      move(1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      move(-1);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      pick(others[current]);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>New message</DialogTitle>
-          <DialogDescription>Send a direct message to someone on the team.</DialogDescription>
-        </DialogHeader>
-        <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <Input
-            type="search"
-            autoFocus
-            placeholder="Search name, role or branch"
-            aria-label="Search the team"
-            className="pl-8"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
+      <DialogContent showCloseButton={false} className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <div className="flex items-start justify-between gap-3 px-5 pt-5">
+          <DialogHeader className="gap-1 p-0 text-left">
+            <DialogTitle className="text-lg">New message</DialogTitle>
+            <DialogDescription>Send a direct message to someone on the team.</DialogDescription>
+          </DialogHeader>
+          <DialogClose asChild>
+            <Button variant="outline" size="icon-sm" aria-label="Close" className="bg-muted/60">
+              <X aria-hidden="true" />
+            </Button>
+          </DialogClose>
         </div>
-        <ul className="-mx-2 grid max-h-80 gap-0.5 overflow-y-auto">
-          {others.map((person) => (
-            <li key={person.id}>
-              <button
-                type="button"
-                disabled={Boolean(busy)}
+
+        <div className="px-5 pt-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <Input
+              type="search"
+              autoFocus
+              role="combobox"
+              aria-expanded="true"
+              aria-controls="new-message-people"
+              aria-activedescendant={others[current] ? `new-message-${others[current].id}` : undefined}
+              placeholder="Search name, role or branch"
+              aria-label="Search the team"
+              className="h-10 rounded-lg pl-9 focus-visible:border-brand focus-visible:ring-brand/30"
+              value={search}
+              onKeyDown={onKeyDown}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setActive(0);
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-baseline justify-between px-5 pt-4 pb-1.5 text-xs text-muted-foreground">
+          <span className="font-medium tracking-wider uppercase">Team</span>
+          <span>
+            {others.length} {others.length === 1 ? "person" : "people"}
+          </span>
+        </div>
+
+        <ul ref={listRef} id="new-message-people" role="listbox" aria-label="Team" className="grid max-h-80 gap-0.5 overflow-y-auto px-2 pb-2">
+          {others.map((person, index) => {
+            const selected = index === current;
+            return (
+              <li
+                key={person.id}
+                id={`new-message-${person.id}`}
+                role="option"
+                aria-selected={selected}
+                data-index={index}
+                onMouseMove={() => index !== current && setActive(index)}
                 onClick={() => pick(person)}
-                className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 ${selected ? "bg-muted" : ""} ${busy && busy !== person.id ? "opacity-60" : ""}`}
               >
-                <PersonAvatar person={person} online={online.has(person.id)} className="size-9" />
+                <span className="relative shrink-0">
+                  <Avatar className="size-9">
+                    {person.photo && <AvatarImage src={person.photo} alt="" className="object-top" />}
+                    <AvatarFallback
+                      className={`text-xs font-semibold ${selected ? "bg-neutral-900 text-brand" : "bg-muted-foreground/15 text-foreground/70"}`}
+                    >
+                      {initialsOf(person.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  {online.has(person.id) && (
+                    <span className="absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-popover bg-status-good">
+                      <span className="sr-only">Online</span>
+                    </span>
+                  )}
+                </span>
                 <span className="grid min-w-0 flex-1 leading-tight">
-                  <span className="truncate text-sm font-medium">{person.name}</span>
+                  <span className="truncate text-sm font-semibold">{person.name}</span>
                   <span className="truncate text-xs text-muted-foreground">
                     {person.title} · {person.branch}
                   </span>
                 </span>
-                {busy === person.id && <LoaderCircle className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />}
-              </button>
-            </li>
-          ))}
+                {busy === person.id ? (
+                  <LoaderCircle className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+                ) : (
+                  selected && (
+                    <span className="hidden sm:inline-flex" aria-hidden="true">
+                      <Key>Enter ↵</Key>
+                    </span>
+                  )
+                )}
+              </li>
+            );
+          })}
           {others.length === 0 && (
-            <li className="px-2 py-6 text-center text-sm text-muted-foreground">
+            <li className="px-3 py-8 text-center text-sm text-muted-foreground">
               {people.length > 1 ? "No one matches your search." : "No one else has activated their account yet."}
             </li>
           )}
         </ul>
+
         {error && (
-          <p role="alert" className="text-sm text-status-bad">
+          <p role="alert" className="px-5 pb-3 text-sm text-status-bad">
             {error}
           </p>
         )}
+
+        <div className="hidden items-center gap-4 border-t bg-muted/40 px-5 py-2.5 text-xs text-muted-foreground sm:flex" aria-hidden="true">
+          <span className="inline-flex items-center gap-1.5">
+            <Key>↑↓</Key> Navigate
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Key>↵</Key> Open chat
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Key>Esc</Key> Close
+          </span>
+        </div>
       </DialogContent>
     </Dialog>
   );

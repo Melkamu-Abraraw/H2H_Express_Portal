@@ -4,25 +4,33 @@ import {
   MESSAGE_MAX,
   parsePhotos,
   PHOTOS_MAX,
+  pinnedMessages,
   searchMessages,
   sendMessage,
   toId,
 } from "@/lib/server/chat";
 
-// GET /api/chat/:id/messages?after=<id>|before=<id>|q=<text>: up to 50 messages, oldest first.
-// With q, the newest 50 that contain it.
+// GET /api/chat/:id/messages: up to 50 messages, oldest first.
+//   ?after=<id>&changedSince=<ISO time>  new messages, plus earlier ones changed since then
+//   ?before=<id>                          the page before (scrolling up)
+//   ?q=<text>                             the newest 50 that contain it
+//   ?pinned=1                             pinned messages
 export async function GET(request, { params }) {
   try {
     const access = await conversationAccess(params);
     if (access.denied) return access.denied;
     const search = new URL(request.url).searchParams;
     const query = (search.get("q") ?? "").trim().slice(0, 100);
+    if (search.has("pinned")) {
+      return Response.json({ success: true, messages: await pinnedMessages(access.db, access.conversation._id) });
+    }
     if (query) {
       return Response.json({ success: true, messages: await searchMessages(access.db, access.conversation._id, query), hasMore: false });
     }
     const result = await listMessages(access.db, access.conversation._id, {
       after: toId(search.get("after")),
       before: toId(search.get("before")),
+      changedSince: Date.parse(search.get("changedSince") ?? "") ? new Date(search.get("changedSince")) : null,
     });
     return Response.json({ success: true, ...result });
   } catch (error) {
@@ -31,7 +39,7 @@ export async function GET(request, { params }) {
   }
 }
 
-// POST /api/chat/:id/messages: { text, photos? } sends a message as the signed-in user.
+// POST /api/chat/:id/messages: { text, photos?, replyTo? } sends a message as the signed-in user.
 // Photos must already be uploaded to the chat folder (see /api/uploads/sign).
 export async function POST(request, { params }) {
   const body = await request.json().catch(() => null);
@@ -47,7 +55,7 @@ export async function POST(request, { params }) {
   try {
     const access = await conversationAccess(params);
     if (access.denied) return access.denied;
-    const message = await sendMessage(access.db, access.user, access.conversation, text, photos);
+    const message = await sendMessage(access.db, access.user, access.conversation, text, photos, toId(body?.replyTo));
     return Response.json({ success: true, message }, { status: 201 });
   } catch (error) {
     console.error("Sending message failed", error);

@@ -55,19 +55,21 @@ export async function openDirect(userId) {
   return body.id;
 }
 
-export function loadMessages(conversationId, { after, before, q } = {}) {
+export function loadMessages(conversationId, { after, before, q, changedSince, pinned } = {}) {
   const query = new URLSearchParams();
   if (after) query.set("after", after);
   if (before) query.set("before", before);
   if (q) query.set("q", q);
+  if (changedSince) query.set("changedSince", changedSince);
+  if (pinned) query.set("pinned", "1");
   return accountRequest(`/api/chat/${conversationId}/messages?${query}`, { cache: "no-store" });
 }
 
-export async function sendChatMessage(conversationId, text, photos = []) {
+export async function sendChatMessage(conversationId, text, photos = [], replyTo = null) {
   const body = await accountRequest(`/api/chat/${conversationId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, photos }),
+    body: JSON.stringify({ text, photos, ...(replyTo && { replyTo }) }),
   });
   notifyChatChanged();
   return body.message;
@@ -86,3 +88,16 @@ export async function setConversationMuted(conversationId, muted) {
   });
   notifyChatChanged();
 }
+
+function messageAction(conversationId, messageId, path, method, body) {
+  return accountRequest(`/api/chat/${conversationId}/messages/${messageId}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    ...(body && { body: JSON.stringify(body) }),
+  }).then((result) => result.message);
+}
+
+export const editChatMessage = (conversationId, messageId, text) => messageAction(conversationId, messageId, "", "PATCH", { text });
+export const deleteChatMessage = (conversationId, messageId) => messageAction(conversationId, messageId, "", "DELETE");
+export const reactToMessage = (conversationId, messageId, emoji) => messageAction(conversationId, messageId, "/reactions", "POST", { emoji });
+export const pinChatMessage = (conversationId, messageId, pinned) => messageAction(conversationId, messageId, "/pin", "POST", { pinned });

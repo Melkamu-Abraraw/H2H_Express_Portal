@@ -1,7 +1,9 @@
 import { ObjectId } from "mongodb";
 import { roleLabel } from "@/lib/permissions";
 import { forbidden, requireAccess } from "@/lib/server/auth";
+import { DIRECTIONS } from "@/components/admin/shipping-routes";
 import { CHAT_PHOTO_FOLDER, isOwnPhoto } from "@/lib/server/cloudinary";
+import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/mongodb";
 import { announce, tokenRequestFor } from "@/lib/server/realtime";
 
@@ -9,16 +11,24 @@ import { announce, tokenRequestFor } from "@/lib/server/realtime";
 // messages between two people. Everything is in MongoDB. Browsers hear about new messages
 // through Ably when it's set up (see realtime.js), and poll as a backup.
 //   conversations: { key (unique), type: "channel"|"direct", name?, branchCode?, members?, lastMessage }
-//   messages:      { conversationId, senderId, senderName, text, photos?, createdAt }
+//   messages:      { conversationId, senderId, senderName, text, photos?, replyTo?, reactions?,
+//                    editedAt?, deletedAt?, pinnedAt?, pinnedBy?, createdAt, updatedAt }
 //   chat_reads:    { userId, conversationId, lastReadAt, muted? }
 
 export const MESSAGE_MAX = 4000;
 export const PHOTOS_MAX = 6;
+// The emoji people can react with (also used as field names, so the list is fixed).
+export const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🎉", "✅"];
 const PAGE = 50;
 const ALL_STAFF = "channel:all";
 
 // People who can sign in: activated and not deactivated.
 const ACTIVE = { disabled: { $ne: true }, passwordHash: { $exists: true } };
+
+// Branch names shown in chat: "Hand to Hand Express Addis Ababa" reads as "H2H Addis Ababa".
+export function shortBranchName(name) {
+  return String(name ?? "").replace(/^Hand to Hand Express\b/i, "H2H").trim();
+}
 
 export function toId(value) {
   return typeof value === "string" && ObjectId.isValid(value) ? new ObjectId(value) : null;
@@ -43,7 +53,7 @@ export async function directory(db) {
     id: String(user._id),
     name: user.name,
     title: roleLabel(user.role),
-    branch: user.branch?.name ?? "All branches",
+    branch: user.branch?.name ? shortBranchName(user.branch.name) : "All branches",
     branchCode: user.branch?.code ?? null,
     photo: user.photo?.url ?? "",
   }));
@@ -58,15 +68,35 @@ function memberIds(conversation, people) {
     .map((person) => person.id);
 }
 
-// Makes sure the All staff channel and one channel per branch people work at exist.
+// Every branch the business has: the ones on the Routes page (built-in routes with their
+// edits, plus added routes), and any branch staff are still assigned to. Code → name.
+async function allBranches(db) {
+  const [config, assigned] = await Promise.all([
+    getConfig(db),
+    db.collection("users").aggregate([
+      { $match: { ...ACTIVE, "branch.code": { $type: "string" } } },
+      { $group: { _id: "$branch.code", name: { $first: "$branch.name" } } },
+    ]).toArray(),
+  ]);
+  const branches = new Map();
+  const add = (code, name) => code && !branches.has(code) && branches.set(code, shortBranchName(name) || code);
+  for (const [code, direction] of Object.entries(DIRECTIONS)) {
+    const routeBranches = config.routes.edits[code]?.branches ?? direction.branches;
+    for (const [key, branch] of Object.entries(routeBranches)) add(key, branch.name);
+  }
+  for (const route of Object.values(config.routes.custom)) {
+    for (const [key, branch] of Object.entries(route.branches ?? {})) add(key, branch.name);
+  }
+  for (const branch of assigned) add(branch._id, branch.name);
+  return branches;
+}
+
+// Makes sure the All staff channel and one channel per branch exist. Returns the branch codes.
 async function ensureChannels(db) {
-  const branches = await db.collection("users").aggregate([
-    { $match: { ...ACTIVE, "branch.code": { $type: "string" } } },
-    { $group: { _id: "$branch.code", name: { $first: "$branch.name" } } },
-  ]).toArray();
+  const branches = await allBranches(db);
   const channels = [
     { key: ALL_STAFF, name: "All staff" },
-    ...branches.map((branch) => ({ key: `channel:branch:${branch._id}`, name: branch.name, branchCode: branch._id })),
+    ...[...branches].map(([code, name]) => ({ key: `channel:branch:${code}`, name, branchCode: code })),
   ];
   const now = new Date();
   await db.collection("conversations").bulkWrite(
@@ -80,13 +110,17 @@ async function ensureChannels(db) {
     })),
     { ordered: false },
   );
+  return [...branches.keys()];
 }
 
+// Staff on one branch see its channel; the owner and anyone on all branches see every
+// branch's channel, including branches nobody has been assigned to yet. A branch removed from
+// the Routes page (with nobody left on it) drops out of the list; its messages are kept.
 export async function visibleConversations(db, user) {
-  await ensureChannels(db);
+  const codes = await ensureChannels(db);
   const branchChannels = user.branch?.code
     ? { key: `channel:branch:${user.branch.code}` }
-    : { key: { $regex: "^channel:branch:" } };
+    : { key: { $in: codes.map((code) => `channel:branch:${code}`) } };
   return db
     .collection("conversations")
     .find({ $or: [{ key: ALL_STAFF }, branchChannels, { type: "direct", members: user._id }] })
@@ -222,12 +256,25 @@ export async function directConversation(db, user, otherId) {
 }
 
 function messageOut(message) {
+  const deleted = Boolean(message.deletedAt);
   return {
     id: String(message._id),
     senderId: String(message.senderId),
     senderName: message.senderName,
-    text: message.text,
-    photos: (message.photos ?? []).map(({ url, width, height }) => ({ url, width, height })),
+    text: deleted ? "" : message.text,
+    photos: deleted ? [] : (message.photos ?? []).map(({ url, width, height }) => ({ url, width, height })),
+    replyTo: message.replyTo ?? null,
+    // [{ emoji, userIds }] in the fixed order above, only those someone used.
+    reactions: deleted
+      ? []
+      : REACTIONS.filter((emoji) => message.reactions?.[emoji]?.length).map((emoji) => ({
+          emoji,
+          userIds: message.reactions[emoji],
+        })),
+    edited: Boolean(message.editedAt),
+    deleted,
+    pinned: Boolean(message.pinnedAt) && !deleted,
+    pinnedBy: message.pinnedBy ?? null,
     createdAt: message.createdAt,
   };
 }
@@ -247,23 +294,38 @@ export async function searchMessages(db, conversationId, query) {
   return rows.reverse().map(messageOut);
 }
 
-// Oldest first. `after`: only newer messages (polling). `before`: the page before it (scrolling up).
-export async function listMessages(db, conversationId, { after, before } = {}) {
+// Oldest first. `after`: only newer messages (polling). `before`: the page before it
+// (scrolling up). `changedSince`: also return already-loaded messages edited, deleted,
+// reacted to or pinned since then. `now` is the server's clock, for the next `changedSince`.
+export async function listMessages(db, conversationId, { after, before, changedSince } = {}) {
   const messages = db.collection("messages");
+  const now = new Date();
   if (after) {
-    const rows = await messages
-      .find({ conversationId, _id: { $gt: after } })
-      .sort({ _id: 1 })
-      .limit(PAGE * 2)
-      .toArray();
-    return { messages: rows.map(messageOut), hasMore: false };
+    const [rows, changed] = await Promise.all([
+      messages.find({ conversationId, _id: { $gt: after } }).sort({ _id: 1 }).limit(PAGE * 2).toArray(),
+      changedSince
+        ? messages.find({ conversationId, _id: { $lte: after }, updatedAt: { $gt: changedSince } }).limit(PAGE * 2).toArray()
+        : [],
+    ]);
+    return { messages: rows.map(messageOut), changed: changed.map(messageOut), hasMore: false, now };
   }
   const rows = await messages
     .find({ conversationId, ...(before && { _id: { $lt: before } }) })
     .sort({ _id: -1 })
     .limit(PAGE + 1)
     .toArray();
-  return { messages: rows.slice(0, PAGE).reverse().map(messageOut), hasMore: rows.length > PAGE };
+  return { messages: rows.slice(0, PAGE).reverse().map(messageOut), changed: [], hasMore: rows.length > PAGE, now };
+}
+
+// Pinned messages in a conversation, most recently pinned first.
+export async function pinnedMessages(db, conversationId) {
+  const rows = await db
+    .collection("messages")
+    .find({ conversationId, pinnedAt: { $exists: true }, deletedAt: { $exists: false } })
+    .sort({ pinnedAt: -1 })
+    .limit(20)
+    .toArray();
+  return rows.map(messageOut);
 }
 
 export async function markRead(db, user, conversationId, at = new Date()) {
@@ -272,15 +334,31 @@ export async function markRead(db, user, conversationId, at = new Date()) {
     .updateOne({ userId: user._id, conversationId }, { $set: { lastReadAt: at } }, { upsert: true });
 }
 
-export async function sendMessage(db, user, conversation, text, photos = []) {
+// A short copy of the message being replied to, kept with the reply so it still reads if
+// the original is later edited or deleted.
+async function replySnapshot(db, conversation, replyToId) {
+  if (!replyToId) return null;
+  const original = await db.collection("messages").findOne({ _id: replyToId, conversationId: conversation._id });
+  if (!original || original.deletedAt) return null;
+  return {
+    id: String(original._id),
+    senderName: original.senderName,
+    text: original.text ? original.text.slice(0, 140) : original.photos?.length ? "📷 Photo" : "",
+  };
+}
+
+export async function sendMessage(db, user, conversation, text, photos = [], replyToId = null) {
   const now = new Date();
+  const replyTo = await replySnapshot(db, conversation, replyToId);
   const message = {
     conversationId: conversation._id,
     senderId: user._id,
     senderName: user.name,
     text,
     ...(photos.length && { photos }),
+    ...(replyTo && { replyTo }),
     createdAt: now,
+    updatedAt: now,
   };
   const preview = text || (photos.length === 1 ? "📷 Photo" : `📷 ${photos.length} photos`);
   const { insertedId } = await db.collection("messages").insertOne(message);
@@ -300,6 +378,81 @@ export async function sendMessage(db, user, conversation, text, photos = []) {
     messageId: String(insertedId),
   });
   return messageOut({ ...message, _id: insertedId });
+}
+
+// --- Actions on an existing message ---------------------------------------------------------
+
+export class MessageRefused extends Error {
+  constructor(message, status = 403) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function findMessage(db, conversation, messageId) {
+  const message = messageId && (await db.collection("messages").findOne({ _id: messageId, conversationId: conversation._id }));
+  if (!message) throw new MessageRefused("Message not found", 404);
+  return message;
+}
+
+// Saves a change, tells everyone in the conversation, and returns the updated message.
+async function changeMessage(db, conversation, message, update) {
+  const saved = await db.collection("messages").findOneAndUpdate(
+    { _id: message._id },
+    { ...update, $set: { ...update.$set, updatedAt: new Date() } },
+    { returnDocument: "after" },
+  );
+  // Keep the list preview in step when the latest message changes.
+  if (conversation.lastMessage && +conversation.lastMessage.at === +message.createdAt && (update.$set?.text !== undefined || update.$set?.deletedAt)) {
+    await db.collection("conversations").updateOne(
+      { _id: conversation._id },
+      { $set: { "lastMessage.text": saved.deletedAt ? "Message deleted" : saved.text.slice(0, 140) || "📷 Photo" } },
+    );
+  }
+  announce(await recipientIds(db, conversation), { type: "update", conversationId: String(conversation._id), messageId: String(message._id) });
+  return messageOut(saved);
+}
+
+export async function editMessage(db, user, conversation, messageId, text) {
+  const message = await findMessage(db, conversation, messageId);
+  if (!message.senderId.equals(user._id)) throw new MessageRefused("You can only edit your own messages");
+  if (message.deletedAt) throw new MessageRefused("That message was deleted", 409);
+  if (!text && !message.photos?.length) throw new MessageRefused("Write a message first", 400);
+  if (text === message.text) return messageOut(message);
+  return changeMessage(db, conversation, message, { $set: { text, editedAt: new Date() } });
+}
+
+// Senders can delete their own messages; owners can delete any. Everyone then sees
+// "This message was deleted" in its place.
+export async function deleteMessage(db, user, conversation, messageId, isOwner) {
+  const message = await findMessage(db, conversation, messageId);
+  if (!message.senderId.equals(user._id) && !isOwner) throw new MessageRefused("You can only delete your own messages");
+  if (message.deletedAt) return messageOut(message);
+  return changeMessage(db, conversation, message, {
+    $set: { text: "", deletedAt: new Date(), deletedBy: user.name },
+    $unset: { photos: "", reactions: "", pinnedAt: "", pinnedBy: "" },
+  });
+}
+
+// Adds the user's reaction, or takes it away if they'd already used that emoji.
+export async function toggleReaction(db, user, conversation, messageId, emoji) {
+  if (!REACTIONS.includes(emoji)) throw new MessageRefused("Choose one of the reactions", 400);
+  const message = await findMessage(db, conversation, messageId);
+  if (message.deletedAt) throw new MessageRefused("That message was deleted", 409);
+  const id = String(user._id);
+  const reacted = message.reactions?.[emoji]?.includes(id);
+  return changeMessage(db, conversation, message, reacted ? { $pull: { [`reactions.${emoji}`]: id } } : { $addToSet: { [`reactions.${emoji}`]: id } });
+}
+
+export async function setPinned(db, user, conversation, messageId, pinned) {
+  const message = await findMessage(db, conversation, messageId);
+  if (message.deletedAt) throw new MessageRefused("That message was deleted", 409);
+  return changeMessage(
+    db,
+    conversation,
+    message,
+    pinned ? { $set: { pinnedAt: new Date(), pinnedBy: user.name } } : { $unset: { pinnedAt: "", pinnedBy: "" } },
+  );
 }
 
 // For /api/chat/:id routes: the signed-in user and the conversation in the URL, or a ready

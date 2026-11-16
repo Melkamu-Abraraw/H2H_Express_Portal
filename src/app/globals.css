@@ -18,6 +18,8 @@
   --color-white: var(--brand-paper);
   --color-cream: var(--brand-cream);
   --color-status-good: var(--status-good);
+  --color-chat: var(--chat);
+  --color-chat-mine: var(--chat-mine);
   --color-chart-ink: var(--chart-ink);
   --color-status-bad: var(--status-bad);
   --color-status-warn: var(--status-warn);
@@ -92,6 +94,9 @@
   --input: #e0e0dc;
   --ring: rgb(var(--brand-dark));
   --status-good: #15803d;
+  /* Chat: the warm backdrop behind messages, and the tint of your own message cards. */
+  --chat: #f5f1ea;
+  --chat-mine: #f1e4d0;
   --status-bad: #b3261e;
   --status-warn: #b45309;
   /* Package stages: kept apart from the route colours (yellow and black) used in charts. */
@@ -138,6 +143,8 @@
   --input: rgb(255 255 255 / 16%);
   --ring: rgb(var(--brand));
   --status-good: #5fd08f;
+  --chat: #1d1c1a;
+  --chat-mine: #3a3226;
   --status-bad: #f28b82;
   --status-warn: #f0a35c;
   --status-received: #a78bfa;

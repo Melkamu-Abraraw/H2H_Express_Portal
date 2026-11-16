@@ -7,29 +7,42 @@ import {
   ArrowLeft,
   Bell,
   BellOff,
+  Check,
+  Copy,
+  EllipsisVertical,
   Hash,
   LoaderCircle,
   MessageSquare,
   MessageSquarePlus,
   Paperclip,
+  Pin,
+  PinOff,
+  Reply,
   RotateCcw,
   Search,
   SendHorizontal,
   Smile,
+  SquarePen,
+  Trash2,
   UserRound,
   Users,
   X,
 } from "lucide-react";
 import {
+  deleteChatMessage,
+  editChatMessage,
   loadChat,
   loadMessages,
   markConversationRead,
   openDirect,
+  pinChatMessage,
+  reactToMessage,
   sendChatMessage,
   setConversationMuted,
 } from "@/components/admin/chat-store";
 import { initialsOf, useProfile } from "@/components/admin/profile-store";
 import { useInboxEvents, useOnline, useRealtimeStatus, useTyping } from "@/components/admin/realtime";
+import { can } from "@/lib/permissions";
 import { uploadPhotos } from "@/lib/upload-photos";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -41,6 +54,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -52,6 +72,8 @@ const LIST_POLL = { polling: 10000, live: 60000 };
 // A new header (avatar, name, time) starts when the sender changes or after this gap.
 const GROUP_GAP = 5 * 60 * 1000;
 const TRACKING = /\b(H2H-[A-Z0-9]+-\d+)\b/gi;
+// Same list as the server's (src/lib/server/chat.js); it refuses anything else.
+const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🎉", "✅"];
 const EMOJIS = ["👍", "🙏", "👋", "😊", "😂", "❤️", "🎉", "👏", "✅", "❌", "⚠️", "📦", "🚚", "✈️", "📍", "⏰", "💵", "📸", "🔥", "🤝", "😅", "🤔", "👀", "💯"];
 
 function visible() {
@@ -450,7 +472,7 @@ function Photos({ photos }) {
   return (
     <div className={`grid gap-1 ${photos.length > 1 ? "grid-cols-2" : ""}`}>
       {photos.map((photo) => (
-        <a key={photo.url} href={photo.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl">
+        <a key={photo.url} href={photo.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg">
           {/* Cloudinary already serves these sized; next/image would need the host configured. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -485,7 +507,7 @@ function EmptyState({ conversation, onSuggest }) {
       ? "Start the conversation with everyone on the team."
       : `Start the conversation with everyone at ${conversation.name}.`;
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center">
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-chat px-4 text-center">
       <span className="grid size-16 place-items-center rounded-full bg-brand/15 text-brand-dark dark:text-brand" aria-hidden="true">
         <MessageSquare className="size-7" />
       </span>
@@ -509,30 +531,199 @@ function EmptyState({ conversation, onSuggest }) {
   );
 }
 
-function Bubble({ message, mine, person, startsGroup, onRetry }) {
-  const date = new Date(message.createdAt);
+// Hover controls stay visible on touch screens, and while their menu is open.
+const HOVER_CONTROL =
+  "opacity-100 transition-opacity md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100 has-[[data-state=open]]:opacity-100";
+
+function ReactionButton({ onReact }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className={`flex gap-2.5 ${mine ? "flex-row-reverse" : ""} ${startsGroup ? "mt-3" : ""}`}>
-      <div className="w-9 shrink-0">{startsGroup && !mine && <PersonAvatar person={person} name={message.senderName} className="size-9" />}</div>
-      <div className={`flex max-w-[78%] flex-col ${mine ? "items-end" : "items-start"}`}>
-        {startsGroup && (
-          <p className="mb-1 flex items-baseline gap-2 px-1 text-xs text-muted-foreground">
-            {!mine && <span className="font-medium text-foreground">{message.senderName}</span>}
-            <time dateTime={date.toISOString()}>{clock(date)}</time>
-          </p>
-        )}
-        <div
-          className={`grid gap-1.5 rounded-2xl text-sm break-words whitespace-pre-wrap ${message.text ? "px-3.5 py-2" : "p-1"} ${
-            mine ? "rounded-tr-md bg-brand/25" : "rounded-tl-md bg-muted"
-          } ${message.status === "sending" ? "opacity-60" : ""}`}
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="React"
+          title="React"
+          className="grid size-8 place-items-center rounded-full border bg-card text-muted-foreground shadow-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {message.photos?.length > 0 && <Photos photos={message.photos} />}
-          {message.text && (
-            <span>
-              <MessageText text={message.text} />
+          <Smile className="size-4" aria-hidden="true" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" className="w-auto rounded-full p-1">
+        <div className="flex gap-0.5">
+          {REACTIONS.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              aria-label={`React with ${emoji}`}
+              onClick={() => {
+                onReact(emoji);
+                setOpen(false);
+              }}
+              className="grid size-9 place-items-center rounded-full text-xl transition-transform hover:scale-125 hover:bg-muted"
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function MessageMenu({ message, mine, canDeleteAny, onAction }) {
+  const hasText = Boolean(message.text);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Message options"
+          className="grid size-7 place-items-center rounded-md text-muted-foreground outline-none hover:bg-black/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10"
+        >
+          <EllipsisVertical className="size-4" aria-hidden="true" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44 rounded-xl p-1.5">
+        <DropdownMenuItem className="gap-3 px-2.5 py-2" onSelect={() => onAction("reply", message)}>
+          <Reply aria-hidden="true" />
+          Reply
+        </DropdownMenuItem>
+        {hasText && (
+          <DropdownMenuItem className="gap-3 px-2.5 py-2" onSelect={() => onAction("copy", message)}>
+            <Copy aria-hidden="true" />
+            Copy
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem className="gap-3 px-2.5 py-2" onSelect={() => onAction(message.pinned ? "unpin" : "pin", message)}>
+          {message.pinned ? <PinOff aria-hidden="true" /> : <Pin aria-hidden="true" />}
+          {message.pinned ? "Unpin" : "Pin"}
+        </DropdownMenuItem>
+        {mine && (
+          <DropdownMenuItem className="gap-3 px-2.5 py-2" onSelect={() => onAction("edit", message)}>
+            <SquarePen aria-hidden="true" />
+            Edit
+          </DropdownMenuItem>
+        )}
+        {(mine || canDeleteAny) && (
+          <>
+            <DropdownMenuSeparator className="my-1.5" />
+            <DropdownMenuItem variant="destructive" className="gap-3 px-2.5 py-2" onSelect={() => onAction("delete", message)}>
+              <Trash2 aria-hidden="true" />
+              Delete
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function Reactions({ message, people, selfId, onReact }) {
+  if (!message.reactions?.length) return null;
+  const nameOf = (id) => (id === selfId ? "You" : (people.find((person) => person.id === id)?.name ?? "Someone"));
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {message.reactions.map(({ emoji, userIds }) => {
+        const mine = userIds.includes(selfId);
+        return (
+          <button
+            key={emoji}
+            type="button"
+            title={userIds.map(nameOf).join(", ")}
+            aria-label={`${emoji} ${userIds.length}${mine ? ", including you. Tap to remove yours" : ". Tap to add yours"}`}
+            aria-pressed={mine}
+            onClick={() => onReact(emoji)}
+            className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              mine ? "border-brand bg-brand/20 font-semibold" : "bg-card hover:bg-muted"
+            }`}
+          >
+            <span className="text-sm leading-none">{emoji}</span>
+            {userIds.length}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReplyQuote({ replyTo, onJump }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onJump?.(replyTo.id)}
+      className="mb-1.5 block w-full rounded-md border-l-2 border-orange-500 bg-black/[0.04] px-2.5 py-1.5 text-left text-xs outline-none hover:bg-black/[0.07] focus-visible:ring-2 focus-visible:ring-ring dark:bg-white/5"
+    >
+      <span className="block font-semibold text-orange-600 dark:text-orange-400">{replyTo.senderName}</span>
+      <span className="line-clamp-2 text-muted-foreground">{replyTo.text || "Message"}</span>
+    </button>
+  );
+}
+
+// One message as a card: others' are white with their name in orange, yours are tinted.
+// Hovering shows a reaction button beside the card and an options menu inside it.
+function Bubble({ message, mine, person, online, startsGroup, people, selfId, canDeleteAny, onRetry, onAction, onReact, onJump, highlighted }) {
+  const date = new Date(message.createdAt);
+  const pending = Boolean(message.status);
+  const interactive = !pending && !message.deleted && onAction;
+  return (
+    <div data-message-id={message.id} className={`group/message flex items-start gap-2.5 ${mine ? "flex-row-reverse" : ""} ${startsGroup ? "mt-4" : "mt-1"}`}>
+      {!mine && (
+        <div className="w-9 shrink-0">
+          {startsGroup && (
+            <span className="relative block">
+              <Avatar className="size-9 ring-2 ring-orange-300 ring-offset-1 ring-offset-chat dark:ring-orange-500/60">
+                {person?.photo && <AvatarImage src={person.photo} alt="" className="object-top" />}
+                <AvatarFallback className="bg-neutral-900 text-xs font-semibold text-brand">{initialsOf(person?.name ?? message.senderName)}</AvatarFallback>
+              </Avatar>
+              {online && (
+                <span className="absolute -right-0.5 -bottom-0.5 size-3 rounded-full border-2 border-chat bg-status-good">
+                  <span className="sr-only">Online</span>
+                </span>
+              )}
             </span>
           )}
         </div>
+      )}
+      <div className={`flex max-w-[min(40rem,82%)] min-w-0 flex-col ${mine ? "items-end" : "items-start"}`}>
+        <div className={`flex items-center gap-2 ${mine ? "flex-row-reverse" : ""}`}>
+          <div
+            className={`relative min-w-0 rounded-xl px-3.5 pt-2.5 pb-1.5 text-sm ${
+              mine ? "rounded-tr-sm bg-chat-mine" : "rounded-tl-sm border bg-card shadow-sm"
+            } ${pending && message.status === "sending" ? "opacity-60" : ""} ${highlighted ? "ring-2 ring-brand" : ""}`}
+          >
+            {interactive && (
+              <span className={`absolute top-1 right-1 ${HOVER_CONTROL}`}>
+                <MessageMenu message={message} mine={mine} canDeleteAny={canDeleteAny} onAction={onAction} />
+              </span>
+            )}
+            {!mine && startsGroup && <p className="mb-1 pr-7 text-[13px] font-semibold text-orange-600 dark:text-orange-400">{message.senderName}</p>}
+            {message.replyTo && !message.deleted && <ReplyQuote replyTo={message.replyTo} onJump={onJump} />}
+            {message.deleted ? (
+              <p className="pr-2 text-muted-foreground italic">This message was deleted</p>
+            ) : (
+              <div className={`grid gap-1.5 ${interactive ? "pr-6" : ""}`}>
+                {message.photos?.length > 0 && <Photos photos={message.photos} />}
+                {message.text && (
+                  <p className="break-words whitespace-pre-wrap">
+                    <MessageText text={message.text} />
+                  </p>
+                )}
+              </div>
+            )}
+            <p className="mt-1 flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
+              {message.pinned && <Pin className="size-3" aria-label="Pinned" />}
+              {message.edited && !message.deleted && <span>edited</span>}
+              <time dateTime={date.toISOString()}>{format(date, "MMM d, yyyy, h:mm a")}</time>
+            </p>
+          </div>
+          {interactive && (
+            <span className={`shrink-0 ${HOVER_CONTROL}`}>
+              <ReactionButton onReact={(emoji) => onReact(message, emoji)} />
+            </span>
+          )}
+        </div>
+        {!message.deleted && <Reactions message={message} people={people} selfId={selfId} onReact={(emoji) => onReact?.(message, emoji)} />}
         {message.status === "failed" && (
           <button
             type="button"
@@ -548,43 +739,52 @@ function Bubble({ message, mine, person, startsGroup, onRetry }) {
   );
 }
 
-function MessageList({ items, people, selfId, hasMore, loadingEarlier, onRetry, onLoadEarlier, scrollRef }) {
+function MessageList({ items, scrollRef, hasMore, loadingEarlier, onLoadEarlier, notice, ...bubble }) {
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-      {hasMore && (
-        <div className="mb-4 text-center">
-          <Button variant="ghost" size="sm" disabled={loadingEarlier} onClick={onLoadEarlier}>
-            {loadingEarlier ? "Loading…" : "Load earlier messages"}
-          </Button>
-        </div>
+    <div className="relative min-h-0 flex-1">
+      <div ref={scrollRef} className="h-full overflow-y-auto bg-chat px-4 py-5 sm:px-6">
+        {hasMore && (
+          <div className="mb-4 text-center">
+            <Button variant="outline" size="sm" className="bg-card" disabled={loadingEarlier} onClick={onLoadEarlier}>
+              {loadingEarlier ? "Loading…" : "Load earlier messages"}
+            </Button>
+          </div>
+        )}
+        <ol>
+          {items.map((message, index) => {
+            const previous = items[index - 1];
+            const date = new Date(message.createdAt);
+            const newDay = !previous || !isSameDay(new Date(previous.createdAt), date);
+            const startsGroup =
+              newDay || previous.senderId !== message.senderId || date - new Date(previous.createdAt) > GROUP_GAP;
+            return (
+              <li key={message.id}>
+                {newDay && (
+                  <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground" role="separator">
+                    <span className="h-px flex-1 bg-border" />
+                    {dayLabel(date)}
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+                )}
+                <Bubble
+                  {...bubble}
+                  message={message}
+                  mine={message.senderId === bubble.selfId}
+                  person={bubble.people.find((member) => member.id === message.senderId)}
+                  online={bubble.onlineIds.has(message.senderId)}
+                  startsGroup={startsGroup}
+                  highlighted={bubble.highlightId === message.id}
+                />
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+      {notice && (
+        <p role="status" className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-foreground px-3 py-1.5 text-xs text-background shadow-md">
+          {notice}
+        </p>
       )}
-      <ol className="grid gap-1">
-        {items.map((message, index) => {
-          const previous = items[index - 1];
-          const date = new Date(message.createdAt);
-          const newDay = !previous || !isSameDay(new Date(previous.createdAt), date);
-          const startsGroup =
-            newDay || previous.senderId !== message.senderId || date - new Date(previous.createdAt) > GROUP_GAP;
-          return (
-            <li key={message.id}>
-              {newDay && (
-                <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground" role="separator">
-                  <span className="h-px flex-1 bg-border" />
-                  {dayLabel(date)}
-                  <span className="h-px flex-1 bg-border" />
-                </div>
-              )}
-              <Bubble
-                message={message}
-                mine={message.senderId === selfId}
-                person={people.find((member) => member.id === message.senderId)}
-                startsGroup={startsGroup}
-                onRetry={onRetry}
-              />
-            </li>
-          );
-        })}
-      </ol>
     </div>
   );
 }
@@ -592,27 +792,33 @@ function MessageList({ items, people, selfId, hasMore, loadingEarlier, onRetry, 
 function SearchResults({ search, people, selfId }) {
   if (search.loading) {
     return (
-      <p role="status" className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+      <p role="status" className="flex flex-1 items-center justify-center gap-2 bg-chat text-sm text-muted-foreground">
         <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
         Searching…
       </p>
     );
   }
   if (!search.query) {
-    return <p className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Type to search this conversation.</p>;
+    return <p className="flex flex-1 items-center justify-center bg-chat text-sm text-muted-foreground">Type to search this conversation.</p>;
   }
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+    <div className="min-h-0 flex-1 overflow-y-auto bg-chat px-4 py-5 sm:px-6">
       <p role="status" className="mb-3 text-sm text-muted-foreground">
         {search.results.length
           ? `${search.results.length === 50 ? "Latest 50" : search.results.length} ${search.results.length === 1 ? "message" : "messages"} with "${search.query}"`
           : `No messages with "${search.query}".`}
       </p>
-      <ol className="grid gap-3">
+      <ol className="grid gap-1">
         {search.results.map((message) => (
           <li key={message.id}>
-            <p className="mb-1 px-1 text-xs text-muted-foreground">{format(new Date(message.createdAt), "MMM d, h:mm a")}</p>
-            <Bubble message={message} mine={message.senderId === selfId} person={people.find((member) => member.id === message.senderId)} startsGroup={false} />
+            <Bubble
+              message={message}
+              mine={message.senderId === selfId}
+              person={people.find((member) => member.id === message.senderId)}
+              startsGroup
+              people={people}
+              selfId={selfId}
+            />
           </li>
         ))}
       </ol>
@@ -620,11 +826,11 @@ function SearchResults({ search, people, selfId }) {
   );
 }
 
-function Composer({ value, onChange, photos, onAddPhotos, onRemovePhoto, onSend, onTyping, label, disabled }) {
-  const textRef = useRef(null);
+function Composer({ value, onChange, photos, onAddPhotos, onRemovePhoto, onSend, onTyping, label, disabled, mode, onCancelMode, textRef }) {
   const fileRef = useRef(null);
+  const editing = mode?.type === "edit";
   const tooLong = value.length > MESSAGE_MAX;
-  const canSend = (value.trim() || photos.length) && !tooLong && !disabled;
+  const canSend = (value.trim() || photos.length || (editing && mode.message.photos?.length)) && !tooLong && !disabled;
 
   function submit(event) {
     event?.preventDefault();
@@ -644,7 +850,21 @@ function Composer({ value, onChange, photos, onAddPhotos, onRemovePhoto, onSend,
 
   return (
     <form onSubmit={submit} className="px-4 pt-2 pb-3 sm:px-6">
-      <div className="rounded-xl border bg-card focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
+      <div className="overflow-hidden rounded-xl border bg-card focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
+        {mode && (
+          <div className="flex items-center gap-3 border-b bg-muted/50 px-3 py-2">
+            {editing ? <SquarePen className="size-4 shrink-0 text-orange-600" aria-hidden="true" /> : <Reply className="size-4 shrink-0 text-orange-600" aria-hidden="true" />}
+            <div className="grid min-w-0 flex-1 leading-tight">
+              <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">
+                {editing ? "Editing message" : `Replying to ${mode.message.senderName}`}
+              </span>
+              <span className="truncate text-xs text-muted-foreground">{mode.message.text || "📷 Photo"}</span>
+            </div>
+            <Button type="button" variant="ghost" size="icon-sm" aria-label={editing ? "Cancel editing" : "Cancel reply"} onClick={onCancelMode}>
+              <X aria-hidden="true" />
+            </Button>
+          </div>
+        )}
         {photos.length > 0 && (
           <ul className="flex flex-wrap gap-2 px-3 pt-3">
             {photos.map((photo) => (
@@ -671,7 +891,7 @@ function Composer({ value, onChange, photos, onAddPhotos, onRemovePhoto, onSend,
             aria-label="Attach photos"
             title="Attach photos"
             className="text-muted-foreground"
-            disabled={disabled || photos.length >= PHOTOS_MAX}
+            disabled={disabled || editing || photos.length >= PHOTOS_MAX}
             onClick={() => fileRef.current?.click()}
           >
             <Paperclip aria-hidden="true" />
@@ -698,11 +918,12 @@ function Composer({ value, onChange, photos, onAddPhotos, onRemovePhoto, onSend,
             className="field-sizing-content max-h-40 min-h-10 flex-1 resize-none bg-transparent px-2 py-2.5 text-base outline-none placeholder:text-muted-foreground md:text-sm"
             onChange={(event) => {
               onChange(event.target.value);
-              if (event.target.value.trim()) onTyping?.();
+              if (event.target.value.trim() && !editing) onTyping?.();
             }}
             onKeyDown={(event) => {
-              // Enter sends; Shift+Enter (or composing with an IME) adds a line.
+              // Enter sends; Shift+Enter (or composing with an IME) adds a line; Esc cancels a reply or edit.
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) submit(event);
+              if (event.key === "Escape" && mode) onCancelMode();
             }}
           />
           <Popover>
@@ -727,8 +948,8 @@ function Composer({ value, onChange, photos, onAddPhotos, onRemovePhoto, onSend,
               </div>
             </PopoverContent>
           </Popover>
-          <Button type="submit" size="icon" aria-label="Send" disabled={!canSend} className="size-10 rounded-lg bg-brand text-black hover:bg-brand/85">
-            <SendHorizontal aria-hidden="true" />
+          <Button type="submit" size="icon" aria-label={editing ? "Save edit" : "Send"} disabled={!canSend} className="size-10 rounded-lg bg-brand text-black hover:bg-brand/85">
+            {editing ? <Check aria-hidden="true" /> : <SendHorizontal aria-hidden="true" />}
           </Button>
         </div>
       </div>
@@ -737,7 +958,13 @@ function Composer({ value, onChange, photos, onAddPhotos, onRemovePhoto, onSend,
           <span className="text-status-bad">Keep messages under {MESSAGE_MAX} characters.</span>
         ) : (
           <>
-            <kbd className="font-sans font-semibold">Enter</kbd> to send · <kbd className="font-sans font-semibold">Shift + Enter</kbd> for a new line
+            <kbd className="font-sans font-semibold">Enter</kbd> to {editing ? "save" : "send"} · <kbd className="font-sans font-semibold">Shift + Enter</kbd> for a new line
+            {mode && (
+              <>
+                {" "}
+                · <kbd className="font-sans font-semibold">Esc</kbd> to cancel
+              </>
+            )}
           </>
         )}
       </p>
@@ -745,8 +972,50 @@ function Composer({ value, onChange, photos, onAddPhotos, onRemovePhoto, onSend,
   );
 }
 
-const NO_THREAD = { id: null, messages: [], pending: [], hasMore: false, loadingEarlier: false, error: "" };
+function PinnedBar({ pinned, onJump }) {
+  const [index, setIndex] = useState(0);
+  if (!pinned.length) return null;
+  const current = pinned[Math.min(index, pinned.length - 1)];
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onJump(current.id);
+        setIndex((value) => (value + 1) % pinned.length);
+      }}
+      className="flex w-full items-center gap-3 border-b bg-card px-4 py-2 text-left outline-none hover:bg-muted/50 focus-visible:bg-muted sm:px-6"
+    >
+      <Pin className="size-4 shrink-0 text-orange-600" aria-hidden="true" />
+      <span className="grid min-w-0 flex-1 leading-tight">
+        <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">
+          Pinned message{pinned.length > 1 ? ` ${Math.min(index, pinned.length - 1) + 1} of ${pinned.length}` : ""}
+        </span>
+        <span className="truncate text-sm">
+          <span className="font-medium">{current.senderName}:</span> {current.text || "📷 Photo"}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+const NO_THREAD = { id: null, messages: [], pending: [], pinned: [], hasMore: false, loadingEarlier: false, error: "", syncedAt: null };
 const NO_SEARCH = { conversationId: null, query: "", results: [], loading: false };
+
+// Puts updated copies of messages (edits, deletes, reactions, pins) in place, and keeps the
+// pinned list in step with them.
+function applyChanges(thread, changed) {
+  if (!changed.length) return thread;
+  const byId = new Map(changed.map((message) => [message.id, message]));
+  let pinned = thread.pinned.filter((message) => !byId.has(message.id) || byId.get(message.id).pinned);
+  for (const message of changed) {
+    if (message.pinned) pinned = [message, ...pinned.filter((item) => item.id !== message.id)];
+  }
+  return {
+    ...thread,
+    messages: thread.messages.map((message) => byId.get(message.id) ?? message),
+    pinned: pinned.map((message) => byId.get(message.id) ?? message),
+  };
+}
 
 export function ChatView() {
   const profile = useProfile();
@@ -761,7 +1030,13 @@ export function ChatView() {
   const [drafts, setDrafts] = useState({});
   const [attachments, setAttachments] = useState({});
   const [search, setSearch] = useState(NO_SEARCH);
+  // Replying to or editing a message: { conversationId, type: "reply" | "edit", message }.
+  const [mode, setMode] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [notice, setNotice] = useState("");
+  const [highlightId, setHighlightId] = useState(null);
   const scrollRef = useRef(null);
+  const composerRef = useRef(null);
   const stickToBottom = useRef(true);
   const threadRef = useRef(thread);
   useEffect(() => {
@@ -772,16 +1047,18 @@ export function ChatView() {
   const shown = list.conversations.find((conversation) => conversation.id === shownId) ?? null;
   const ready = thread.id === shownId;
   const searching = search.conversationId === shownId;
+  const activeMode = mode?.conversationId === shownId ? mode : null;
   const draft = drafts[shownId] ?? "";
   const photos = attachments[shownId] ?? [];
+  const canDeleteAny = can(profile, "staff.manage");
   const { typingNames, notifyTyping, stoppedTyping } = useTyping(shownId, profile.name, profile.id);
   // Set by the effects below, so real-time signals and timers can trigger the same loads.
   const reloadList = useRef(null);
   const pullNew = useRef(null);
 
   useInboxEvents((event) => {
-    if (event?.type === "message" && event.conversationId === shownId) pullNew.current?.();
-    reloadList.current?.();
+    if (event?.conversationId === shownId && (event.type === "message" || event.type === "update")) pullNew.current?.();
+    if (event?.type !== "update") reloadList.current?.();
   });
 
   // The conversation list: loaded once, then on every real-time signal.
@@ -800,7 +1077,8 @@ export function ChatView() {
     };
   }, []);
 
-  // The open conversation: first page, then new messages on each signal or backup check.
+  // The open conversation: first page and pins, then new and changed messages on each signal
+  // or backup check.
   useEffect(() => {
     if (!shownId) return;
     let cancelled = false;
@@ -816,11 +1094,11 @@ export function ChatView() {
       }));
     }
 
-    loadMessages(shownId)
-      .then((body) => {
+    Promise.all([loadMessages(shownId), loadMessages(shownId, { pinned: true })])
+      .then(([body, pins]) => {
         if (cancelled) return;
         stickToBottom.current = true;
-        setThread({ ...NO_THREAD, id: shownId, messages: body.messages, hasMore: body.hasMore });
+        setThread({ ...NO_THREAD, id: shownId, messages: body.messages, pinned: pins.messages, hasMore: body.hasMore, syncedAt: body.now });
         seen();
       })
       .catch((error) => !cancelled && setThread({ ...NO_THREAD, id: shownId, error: error.message }));
@@ -829,17 +1107,21 @@ export function ChatView() {
       const current = threadRef.current;
       if (current.id !== shownId) return;
       const after = current.messages.at(-1)?.id;
-      loadMessages(shownId, { after })
+      loadMessages(shownId, { after, changedSince: current.syncedAt })
         .then((body) => {
-          if (cancelled || !body.messages.length) return;
-          const box = scrollRef.current;
-          stickToBottom.current = !box || box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+          if (cancelled) return;
+          if (body.messages.length) {
+            const box = scrollRef.current;
+            stickToBottom.current = !box || box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+          }
           setThread((latest) => {
             if (latest.id !== shownId) return latest;
             const known = new Set(latest.messages.map((message) => message.id));
-            return { ...latest, messages: [...latest.messages, ...body.messages.filter((message) => !known.has(message.id))] };
+            const added = body.messages.filter((message) => !known.has(message.id));
+            const updated = applyChanges({ ...latest, syncedAt: body.now ?? latest.syncedAt }, body.changed ?? []);
+            return added.length ? { ...updated, messages: [...updated.messages, ...added] } : updated;
           });
-          seen();
+          if (body.messages.length) seen();
         })
         .catch(() => {});
     }
@@ -865,7 +1147,7 @@ export function ChatView() {
   useEffect(() => {
     const box = scrollRef.current;
     if (box && stickToBottom.current) box.scrollTop = box.scrollHeight;
-  }, [thread.messages, thread.pending]);
+  }, [thread.messages.length, thread.pending]);
 
   // Server search, a moment after typing stops.
   useEffect(() => {
@@ -882,8 +1164,25 @@ export function ChatView() {
     };
   }, [searching, search.conversationId, search.query]);
 
+  // Short-lived notes such as "Copied".
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 2000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setHighlightId(null), 1600);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
+
   function setDraft(text) {
     setDrafts((current) => ({ ...current, [shownId]: text }));
+  }
+
+  function focusComposer() {
+    requestAnimationFrame(() => composerRef.current?.focus());
   }
 
   function addPhotos(files) {
@@ -905,12 +1204,27 @@ export function ChatView() {
     });
   }
 
+  function replaceMessage(saved) {
+    setThread((latest) => applyChanges(latest, [saved]));
+  }
+
+  function jumpTo(messageId) {
+    const element = scrollRef.current?.querySelector(`[data-message-id="${messageId}"]`);
+    if (!element) {
+      setNotice("That message is further up. Load earlier messages to see it.");
+      return;
+    }
+    stickToBottom.current = false;
+    element.scrollIntoView({ block: "center", behavior: "smooth" });
+    setHighlightId(messageId);
+  }
+
   async function deliver(conversationId, pending) {
     try {
       // Photos go to Cloudinary first (once, even if sending is retried).
       const uploaded = pending.uploaded ?? (pending.files?.length ? await uploadPhotos(pending.files, "chat") : []);
       pending.uploaded = uploaded;
-      const saved = await sendChatMessage(conversationId, pending.text, uploaded);
+      const saved = await sendChatMessage(conversationId, pending.text, uploaded, pending.replyTo?.id);
       pending.photos?.forEach((photo) => photo.url.startsWith("blob:") && URL.revokeObjectURL(photo.url));
       setThread((latest) =>
         latest.id !== conversationId
@@ -930,8 +1244,26 @@ export function ChatView() {
     }
   }
 
-  function send() {
+  async function saveEdit() {
+    const { message } = activeMode;
     const text = draft.trim();
+    setMode(null);
+    setDraft("");
+    try {
+      replaceMessage(await editChatMessage(shownId, message.id, text));
+      reloadList.current?.();
+    } catch (error) {
+      setNotice(error.message);
+    }
+  }
+
+  function send() {
+    if (activeMode?.type === "edit") {
+      saveEdit();
+      return;
+    }
+    const text = draft.trim();
+    const replyTo = activeMode?.type === "reply" ? activeMode.message : null;
     const pending = {
       id: `pending-${crypto.randomUUID()}`,
       senderId: profile.id,
@@ -939,12 +1271,15 @@ export function ChatView() {
       text,
       photos: photos.map((photo) => ({ url: photo.preview })),
       files: photos.map((photo) => photo.file),
+      replyTo: replyTo && { id: replyTo.id, senderName: replyTo.senderName, text: replyTo.text || "📷 Photo" },
+      reactions: [],
       createdAt: new Date().toISOString(),
       status: "sending",
     };
     stickToBottom.current = true;
     setThread((latest) => ({ ...latest, pending: [...latest.pending, pending] }));
     setDraft("");
+    setMode(null);
     setAttachments((current) => ({ ...current, [shownId]: [] }));
     stoppedTyping();
     deliver(shownId, pending);
@@ -954,6 +1289,48 @@ export function ChatView() {
     const again = { ...message, status: "sending" };
     setThread((latest) => ({ ...latest, pending: latest.pending.map((item) => (item.id === message.id ? again : item)) }));
     deliver(shownId, again);
+  }
+
+  async function react(message, emoji) {
+    try {
+      replaceMessage(await reactToMessage(shownId, message.id, emoji));
+    } catch (error) {
+      setNotice(error.message);
+    }
+  }
+
+  async function act(action, message) {
+    if (action === "reply" || action === "edit") {
+      setMode({ conversationId: shownId, type: action, message });
+      if (action === "edit") setDraft(message.text);
+      focusComposer();
+    } else if (action === "copy") {
+      navigator.clipboard?.writeText(message.text).then(
+        () => setNotice("Copied"),
+        () => setNotice("Couldn't copy"),
+      );
+    } else if (action === "pin" || action === "unpin") {
+      try {
+        replaceMessage(await pinChatMessage(shownId, message.id, action === "pin"));
+        setNotice(action === "pin" ? "Pinned for everyone here" : "Unpinned");
+      } catch (error) {
+        setNotice(error.message);
+      }
+    } else if (action === "delete") {
+      setConfirmDelete(message);
+    }
+  }
+
+  async function removeMessage() {
+    const message = confirmDelete;
+    setConfirmDelete(null);
+    if (activeMode?.message.id === message.id) setMode(null);
+    try {
+      replaceMessage(await deleteChatMessage(shownId, message.id));
+      reloadList.current?.();
+    } catch (error) {
+      setNotice(error.message);
+    }
   }
 
   async function loadEarlier() {
@@ -1091,27 +1468,39 @@ export function ChatView() {
               </div>
             )}
 
+            {!searching && ready && <PinnedBar key={shownId} pinned={thread.pinned} onJump={jumpTo} />}
+
             {searching ? (
               <SearchResults search={{ ...search, query: search.query.trim() }} people={list.people} selfId={profile.id} />
             ) : !ready ? (
-              <p role="status" className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+              <p role="status" className="flex flex-1 items-center justify-center gap-2 bg-chat text-sm text-muted-foreground">
                 <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
                 Loading messages…
               </p>
             ) : thread.error ? (
-              <p role="alert" className="flex flex-1 items-center justify-center text-sm text-status-bad">
+              <p role="alert" className="flex flex-1 items-center justify-center bg-chat text-sm text-status-bad">
                 {thread.error}
               </p>
             ) : items.length === 0 ? (
-              <EmptyState conversation={shown} onSuggest={setDraft} />
+              <EmptyState conversation={shown} onSuggest={(text) => {
+                setDraft(text);
+                focusComposer();
+              }} />
             ) : (
               <MessageList
                 items={items}
                 people={list.people}
                 selfId={profile.id}
+                onlineIds={online}
+                canDeleteAny={canDeleteAny}
+                highlightId={highlightId}
                 hasMore={thread.hasMore}
                 loadingEarlier={thread.loadingEarlier}
+                notice={notice}
                 onRetry={retry}
+                onAction={act}
+                onReact={react}
+                onJump={jumpTo}
                 onLoadEarlier={loadEarlier}
                 scrollRef={scrollRef}
               />
@@ -1133,6 +1522,12 @@ export function ChatView() {
                 onRemovePhoto={removePhoto}
                 onSend={send}
                 onTyping={notifyTyping}
+                mode={activeMode}
+                onCancelMode={() => {
+                  if (activeMode?.type === "edit") setDraft("");
+                  setMode(null);
+                }}
+                textRef={composerRef}
                 disabled={!ready || Boolean(thread.error)}
                 label={`Message ${shown.type === "direct" ? shown.name : `#${shown.name}`}`}
               />
@@ -1144,6 +1539,26 @@ export function ChatView() {
       </section>
 
       <NewMessageDialog open={picking} onOpenChange={setPicking} people={list.people} online={online} selfId={profile.id} onPick={startDirect} />
+
+      <Dialog open={Boolean(confirmDelete)} onOpenChange={(open) => !open && setConfirmDelete(null)}>
+        <DialogContent className="gap-4 p-5 sm:max-w-sm">
+          <DialogHeader className="gap-1.5 p-0 text-left">
+            <DialogTitle>Delete this message?</DialogTitle>
+            <DialogDescription>
+              Everyone in this conversation will see &ldquo;This message was deleted&rdquo; in its place. This can&apos;t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfirmDelete(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={removeMessage}>
+              <Trash2 aria-hidden="true" />
+              Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

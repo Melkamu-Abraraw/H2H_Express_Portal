@@ -30,7 +30,6 @@ export const mainNav = [
   },
   { label: "Requests", href: "/admin/requests", icon: Inbox, permission: "requests.view" },
   { label: "Customers", href: "/admin/customers", icon: Users, permission: "customers.view" },
-  { label: "Chat", href: "/admin/chat", icon: MessagesSquare, permission: "chat.use" },
   // { label: "Manifests", href: "/admin/manifests", icon: FileText },
   {
     label: "Payments",
@@ -47,5 +46,6 @@ export const manageNav = [
 
 // A utility rather than a daily destination, so it sits at the bottom of the sidebar.
 export const utilityNav = [
+  { label: "Chat", href: "/admin/chat", icon: MessagesSquare, permission: "chat.use" },
   { label: "Settings", href: "/admin/settings", icon: Settings, permission: "settings.view" },
 ];

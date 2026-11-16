@@ -160,13 +160,15 @@ export function AppSidebar() {
   const pending = usePendingRequests(pathname, can(profile, "requests.view"));
   const unread = useChatUnread(can(profile, "chat.use"), pathname);
   const badges = { "/admin/requests": pending, "/admin/chat": unread };
-  const main = allowed(mainNav).map((item) =>
-    badges[item.href] > 0
-      ? { ...item, badge: { count: badges[item.href] > 99 ? "99+" : badges[item.href], tone: "new" } }
-      : item,
-  );
+  const withBadges = (items) =>
+    allowed(items).map((item) =>
+      badges[item.href] > 0
+        ? { ...item, badge: { count: badges[item.href] > 99 ? "99+" : badges[item.href], tone: "new" } }
+        : item,
+    );
+  const main = withBadges(mainNav);
   const manage = allowed(manageNav);
-  const utility = allowed(utilityNav);
+  const utility = withBadges(utilityNav);
 
   return (
     <Sidebar collapsible="icon">

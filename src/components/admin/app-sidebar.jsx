@@ -6,6 +6,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { can } from "@/lib/permissions";
+import { useChatUnread } from "@/components/admin/chat-store";
+import { RealtimeConnection } from "@/components/admin/realtime";
 import { useProfile } from "@/components/admin/profile-store";
 import { SidebarAccount } from "@/components/admin/sidebar-account";
 import { manageNav, mainNav, utilityNav } from "@/components/admin/nav-items";
@@ -156,9 +158,11 @@ export function AppSidebar() {
   const profile = useProfile();
   const allowed = (items) => items.filter((item) => can(profile, item.permission));
   const pending = usePendingRequests(pathname, can(profile, "requests.view"));
+  const unread = useChatUnread(can(profile, "chat.use"), pathname);
+  const badges = { "/admin/requests": pending, "/admin/chat": unread };
   const main = allowed(mainNav).map((item) =>
-    item.href === "/admin/requests" && pending > 0
-      ? { ...item, badge: { count: pending, tone: "new" } }
+    badges[item.href] > 0
+      ? { ...item, badge: { count: badges[item.href] > 99 ? "99+" : badges[item.href], tone: "new" } }
       : item,
   );
   const manage = allowed(manageNav);
@@ -166,6 +170,8 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
+      {/* One real-time connection per tab: inbox signals and who's online. */}
+      <RealtimeConnection userId={profile.id} enabled={can(profile, "chat.use")} />
       <SidebarHeader>
         <div className="flex items-center gap-2.5 p-1 group-data-[collapsible=icon]:p-0">
           <Image

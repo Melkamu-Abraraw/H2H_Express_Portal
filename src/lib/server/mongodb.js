@@ -18,6 +18,9 @@ async function connect() {
     db.collection("sessions").createIndex({ userId: 1 }),
     // MongoDB deletes each session once its expiresAt has passed.
     db.collection("sessions").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    db.collection("conversations").createIndex({ key: 1 }, { unique: true }),
+    db.collection("messages").createIndex({ conversationId: 1, _id: -1 }),
+    db.collection("chat_reads").createIndex({ userId: 1, conversationId: 1 }, { unique: true }),
   ]);
   return db;
 }

@@ -39,6 +39,7 @@ const ACCESS = {
     "requests.view",
     "routes.manage",
     "settings.view",
+    "chat.use",
   ],
   front_desk: [
     "dashboard",
@@ -50,8 +51,9 @@ const ACCESS = {
     "payments.record",
     "customers.view",
     "requests.view",
+    "chat.use",
   ],
-  warehouse: ["packages.view", "packages.status"],
+  warehouse: ["packages.view", "packages.status", "chat.use"],
 };
 
 export function isRole(value) {
@@ -78,6 +80,7 @@ const PAGES = [
   ["/admin/routes", "routes.manage"],
   ["/admin/staff", "staff.manage"],
   ["/admin/settings", "settings.view"],
+  ["/admin/chat", "chat.use"],
 ];
 
 export function pagePermission(pathname) {

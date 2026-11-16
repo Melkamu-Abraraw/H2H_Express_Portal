@@ -33,9 +33,16 @@ async function readJson(response) {
   }
 }
 
-export async function uploadPackagePhotos(files) {
+// `purpose` picks the Cloudinary folder (and the permission the server checks): "package" or "chat".
+export async function uploadPhotos(files, purpose = "package") {
   if (!files.length) return [];
-  const sign = await readJson(await fetch("/api/uploads/sign", { method: "POST" }));
+  const sign = await readJson(
+    await fetch("/api/uploads/sign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ purpose }),
+    }),
+  );
   if (!sign.success) throw new Error(sign.error || "Couldn't start the photo upload");
 
   return Promise.all(
@@ -60,4 +67,8 @@ export async function uploadPackagePhotos(files) {
       };
     }),
   );
+}
+
+export function uploadPackagePhotos(files) {
+  return uploadPhotos(files, "package");
 }

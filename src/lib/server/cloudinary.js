@@ -2,6 +2,7 @@ import { v2 as cloudinary } from "cloudinary";
 
 export const PACKAGE_PHOTO_FOLDER = "h2h-express/packages";
 export const AVATAR_FOLDER = "h2h-express/avatars";
+export const CHAT_PHOTO_FOLDER = "h2h-express/chat";
 
 export function cloudinaryConfig() {
   const config = {
@@ -22,12 +23,12 @@ export function signUpload(params) {
 }
 
 // Only accept photos that were uploaded to our own account and folder.
-export function isOwnPhoto(photo) {
+export function isOwnPhoto(photo, folder = PACKAGE_PHOTO_FOLDER) {
   const { cloud_name: cloud } = cloudinaryConfig();
   return (
     typeof photo?.url === "string" &&
     photo.url.startsWith(`https://res.cloudinary.com/${cloud}/image/upload/`) &&
     typeof photo.publicId === "string" &&
-    photo.publicId.startsWith(`${PACKAGE_PHOTO_FOLDER}/`)
+    photo.publicId.startsWith(`${folder}/`)
   );
 }

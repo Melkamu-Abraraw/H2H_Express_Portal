@@ -4,6 +4,7 @@ import {
   House,
   Inbox,
   MapPin,
+  MessagesSquare,
   Package,
   Settings,
   UserCog,
@@ -29,6 +30,7 @@ export const mainNav = [
   },
   { label: "Requests", href: "/admin/requests", icon: Inbox, permission: "requests.view" },
   { label: "Customers", href: "/admin/customers", icon: Users, permission: "customers.view" },
+  { label: "Chat", href: "/admin/chat", icon: MessagesSquare, permission: "chat.use" },
   // { label: "Manifests", href: "/admin/manifests", icon: FileText },
   {
     label: "Payments",

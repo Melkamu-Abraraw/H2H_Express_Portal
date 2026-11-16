@@ -5,12 +5,12 @@ export const ROLES = [
   {
     value: "owner",
     label: "Owner",
-    description: "Everything, including staff, routes and the exchange rate.",
+    description: "Everything, including the Payments page, staff, routes and the exchange rate.",
   },
   {
     value: "manager",
     label: "Manager",
-    description: "Packages, payments, customers, requests and routes. Can't manage staff.",
+    description: "Packages, customers, requests and routes, and takes payments. Can't see the Payments page or manage staff.",
   },
   {
     value: "front_desk",
@@ -33,7 +33,7 @@ const ACCESS = {
     "packages.view",
     "packages.create",
     "packages.status",
-    "payments.view",
+    // Can take money on a package, but only the owner sees the Payments page.
     "payments.record",
     "customers.view",
     "requests.view",
@@ -46,7 +46,7 @@ const ACCESS = {
     "packages.create",
     // Handing a package over at pickup marks it delivered.
     "packages.status",
-    "payments.view",
+    // Collects balances at pickup, but only the owner sees the Payments page.
     "payments.record",
     "customers.view",
     "requests.view",

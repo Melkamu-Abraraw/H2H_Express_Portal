@@ -93,7 +93,8 @@ function isLastOwner(member, staff) {
 
 function TextField({ id, label, error, hint, className = "", ...props }) {
   return (
-    <div className={`grid gap-1.5 ${className}`}>
+    // content-start: a field without a hint sits level with a neighbour that has one.
+    <div className={`grid content-start gap-1.5 ${className}`}>
       <Label htmlFor={id}>{label}</Label>
       <Input
         id={id}

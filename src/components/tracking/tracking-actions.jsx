@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Copy, MessageCircle } from "lucide-react";
-import { useSettings } from "@/components/admin/settings-store";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -52,10 +51,26 @@ export function CopyNumber({ number, className }) {
   );
 }
 
+// The business's public contact details, from Settings → Business profile.
+function useBusiness() {
+  const [business, setBusiness] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/business")
+      .then((response) => response.json())
+      .then((body) => !cancelled && body.success && setBusiness(body.business))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return business;
+}
+
 // Shown only once a support phone is set in Settings → Business profile.
 export function TrackingActions({ number }) {
-  const { business } = useSettings();
-  const digits = business.phone.replace(/\D/g, "");
+  const business = useBusiness();
+  const digits = business?.phone.replace(/\D/g, "") ?? "";
   if (!digits) return null;
   const message = `Hi ${business.name}, I have a question about package ${number}.`;
 

@@ -1,18 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Monitor, Moon, RotateCcw, Sun } from "lucide-react";
+import { Monitor, Moon, Sun } from "lucide-react";
 import { saveExchangeRates, useExchangeRates } from "@/components/admin/exchange-store";
 import { useProfile } from "@/components/admin/profile-store";
 import { can } from "@/lib/permissions";
-import { resetShippingRates, useShippingRates } from "@/components/admin/pricing-store";
-import { resetRoutes, useRoutes } from "@/components/admin/routes-store";
-import {
-  DEFAULT_SETTINGS,
-  resetSettings,
-  saveSettings,
-  useSettings,
-} from "@/components/admin/settings-store";
+import { saveSettings, useSettings } from "@/components/admin/settings-store";
 import { setTheme, useTheme } from "@/components/admin/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,25 +41,34 @@ function SettingsCard({ title, description, children }) {
   );
 }
 
-function SaveRow({ saved, dirty }) {
+function SaveRow({ saved, dirty, busy = false, error = "" }) {
   return (
     <div className="flex items-center justify-end gap-3 border-t pt-4">
-      {saved && !dirty && (
-        <p role="status" className="text-sm text-status-good">
-          Saved
+      {error ? (
+        <p role="alert" className="mr-auto text-sm text-status-bad">
+          {error}
         </p>
+      ) : (
+        saved &&
+        !dirty && (
+          <p role="status" className="text-sm text-status-good">
+            Saved
+          </p>
+        )
       )}
-      <Button type="submit" disabled={!dirty}>
-        Save changes
+      <Button type="submit" disabled={!dirty || busy}>
+        {busy ? "Saving…" : "Save changes"}
       </Button>
     </div>
   );
 }
 
-// Drafts sit on top of what's stored, so stored values show once the browser has loaded them.
+// Drafts sit on top of what's stored, so stored values show once they've loaded from the server.
 function useDraft(stored) {
   const [draft, setDraft] = useState({});
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const values = { ...stored, ...draft };
   const dirty = Object.entries(draft).some(([key, value]) => stored[key] !== value);
 
@@ -74,13 +76,28 @@ function useDraft(stored) {
     values,
     dirty,
     saved,
+    busy,
+    error,
     change(key, value) {
       setDraft((current) => ({ ...current, [key]: value }));
       setSaved(false);
+      setError("");
     },
-    done() {
-      setDraft({});
-      setSaved(true);
+    // Saves through the server; a refusal keeps the draft and shows why.
+    async save(action) {
+      setBusy(true);
+      setError("");
+      try {
+        await action();
+        setDraft({});
+        setSaved(true);
+        return true;
+      } catch (failure) {
+        setError(failure.message);
+        return false;
+      } finally {
+        setBusy(false);
+      }
     },
   };
 }
@@ -103,8 +120,7 @@ function BusinessProfile() {
     }
     setErrors(found);
     if (Object.keys(found).length) return;
-    saveSettings({ business: values });
-    form.done();
+    form.save(() => saveSettings({ business: values }));
   }
 
   return (
@@ -136,7 +152,7 @@ function BusinessProfile() {
             );
           })}
         </div>
-        <SaveRow saved={form.saved} dirty={form.dirty} />
+        <SaveRow saved={form.saved} dirty={form.dirty} busy={form.busy} error={form.error} />
       </form>
     </SettingsCard>
   );
@@ -158,11 +174,7 @@ function PackageRules() {
       return;
     }
     setError("");
-    saveSettings({
-      pickupReminderDays: days,
-      requirePaymentBeforeDelivery: form.values.requirePaymentBeforeDelivery,
-    });
-    form.done();
+    form.save(() => saveSettings({ pickupReminderDays: days }));
   }
 
   return (
@@ -211,7 +223,7 @@ function PackageRules() {
           </span>
         </label>
 
-        <SaveRow saved={form.saved} dirty={form.dirty} />
+        <SaveRow saved={form.saved} dirty={form.dirty} busy={form.busy} error={form.error} />
       </form>
     </SettingsCard>
   );
@@ -242,89 +254,6 @@ function Appearance() {
           </label>
         ))}
       </RadioGroup>
-    </SettingsCard>
-  );
-}
-
-function ResetButton({ label, onReset }) {
-  const [confirming, setConfirming] = useState(false);
-  const [done, setDone] = useState(false);
-
-  return (
-    <div className="flex shrink-0 items-center gap-2">
-      <span role="status" className="text-sm text-status-good">
-        {done && !confirming ? "Done" : ""}
-      </span>
-      <Button
-      variant="outline"
-      size="sm"
-      className={confirming ? "border-status-bad text-status-bad hover:text-status-bad" : undefined}
-      aria-label={confirming ? `Confirm reset ${label}` : `Reset ${label}`}
-      onBlur={() => setConfirming(false)}
-      onClick={() => {
-        if (!confirming) {
-          setConfirming(true);
-          setDone(false);
-          return;
-        }
-        onReset();
-        setConfirming(false);
-        setDone(true);
-      }}
-    >
-      <RotateCcw aria-hidden="true" />
-      {confirming ? "Click again to reset" : "Reset"}
-    </Button>
-    </div>
-  );
-}
-
-function SavedData() {
-  const routes = useRoutes();
-  const rates = useShippingRates();
-  const settings = useSettings();
-  const added = routes.filter((route) => !route.builtIn).length;
-  const priced = Object.keys(rates).length;
-  const customised = JSON.stringify(settings) !== JSON.stringify(DEFAULT_SETTINGS);
-  const plural = (count, word) => `${count} ${count === 1 ? word : `${word}s`}`;
-
-  const rows = [
-    {
-      label: "routes",
-      title: "Routes",
-      detail: `${plural(added, "added route")}. Removes added routes and branch changes.`,
-      onReset: resetRoutes,
-    },
-    {
-      label: "shipping rates",
-      title: "Shipping rates",
-      detail: `Set for ${plural(priced, "route")}. Clears every price per kg.`,
-      onReset: resetShippingRates,
-    },
-    {
-      label: "settings",
-      title: "Settings",
-      detail: customised ? "Changed from the defaults." : "Using the defaults.",
-      onReset: resetSettings,
-    },
-  ];
-
-  return (
-    <SettingsCard
-      title="Data saved in this browser"
-      description="Until the portal has a server, changes are kept only on this computer. Resetting can't be undone."
-    >
-      <ul className="divide-y">
-        {rows.map(({ label, title, detail, onReset }) => (
-          <li key={label} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{title}</p>
-              <p className="text-xs text-muted-foreground">{detail}</p>
-            </div>
-            <ResetButton label={label} onReset={onReset} />
-          </li>
-        ))}
-      </ul>
     </SettingsCard>
   );
 }
@@ -401,7 +330,6 @@ export function SettingsView() {
       {can(profile, "exchange.manage") && <ExchangeRate />}
       <PackageRules />
       <Appearance />
-      <SavedData />
     </div>
   );
 }

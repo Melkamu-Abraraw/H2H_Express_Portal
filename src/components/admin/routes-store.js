@@ -1,20 +1,18 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
 import { COUNTRIES } from "@/components/admin/countries";
+import { applyConfig, json, useConfig } from "@/components/admin/config-store";
 import {
   routeAirports,
   routeCities,
   stepsBetween,
   trackingSteps,
 } from "@/components/admin/package-tracking";
+import { accountRequest } from "@/components/admin/profile-store";
 import { DIRECTIONS } from "@/components/admin/shipping-routes";
 
-// Routes live in this browser until the portal has a backend to store them.
+// Routes are stored on the server and shared by everyone (see /api/routes).
 // Saved shape: { custom: { [code]: route }, edits: { [builtInCode]: { branches, defaultBranch } } }
-const STORAGE_KEY = "h2h-routes";
-const CHANGE_EVENT = "h2h-routes-change";
-const EMPTY = { custom: {}, edits: {} };
 
 export function routeCode(from, to) {
   return `${from}${to}`;
@@ -34,29 +32,12 @@ const BUILT_IN = Object.entries(DIRECTIONS).map(([code, direction]) => ({
   builtIn: true,
 }));
 
-let cachedRaw;
+let cachedSaved;
 let cachedRoutes = BUILT_IN;
 
-function readRaw() {
-  try {
-    return localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function parseSaved(raw) {
-  try {
-    const saved = raw ? JSON.parse(raw) : EMPTY;
-    return { custom: saved.custom ?? {}, edits: saved.edits ?? {} };
-  } catch {
-    return EMPTY;
-  }
-}
-
-function hydrate(raw) {
-  if (raw === cachedRaw) return cachedRoutes;
-  const { custom, edits } = parseSaved(raw);
+function hydrate(saved) {
+  if (saved === cachedSaved) return cachedRoutes;
+  const { custom = {}, edits = {} } = saved ?? {};
   const builtIn = BUILT_IN.map((route) => ({ ...route, ...edits[route.code] }));
   const added = Object.values(custom)
     .filter((route) => COUNTRIES[route.from] && COUNTRIES[route.to])
@@ -71,53 +52,26 @@ function hydrate(raw) {
       ),
       builtIn: false,
     }));
-  cachedRaw = raw;
+  cachedSaved = saved;
   cachedRoutes = [...builtIn, ...added];
   return cachedRoutes;
 }
 
-function subscribe(onChange) {
-  window.addEventListener(CHANGE_EVENT, onChange);
-  window.addEventListener("storage", onChange);
-  return () => {
-    window.removeEventListener(CHANGE_EVENT, onChange);
-    window.removeEventListener("storage", onChange);
-  };
-}
-
 export function useRoutes() {
-  return hydrate(useSyncExternalStore(subscribe, readRaw, () => null));
+  return hydrate(useConfig().routes);
 }
 
-function write(change) {
-  const saved = parseSaved(readRaw());
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(change(saved)));
-  window.dispatchEvent(new Event(CHANGE_EVENT));
+// Saves a route and its prices per kg together. `route` uses country codes for from/to.
+// `rates`: { normal, express }, or null to clear them. `previousCode` is set when an added
+// route's countries changed; `isNew` when it's being added. Rejects with the server's message.
+export async function saveRoute(route, { rates, previousCode, isNew = false } = {}) {
+  const body = await accountRequest(
+    `/api/routes/${route.code}`,
+    json("PUT", { route, rates, ...(previousCode && { previousCode }), isNew }),
+  );
+  applyConfig(body);
 }
 
-// `route` uses country codes for from/to. `previousCode` is set when an added route is edited.
-export function saveRoute(route, previousCode) {
-  write(({ custom, edits }) => {
-    if (BUILT_IN.some((builtIn) => builtIn.code === route.code)) {
-      const { branches, defaultBranch } = route;
-      return { custom, edits: { ...edits, [route.code]: { branches, defaultBranch } } };
-    }
-    const next = { ...custom };
-    if (previousCode) delete next[previousCode];
-    next[route.code] = route;
-    return { custom: next, edits };
-  });
-}
-
-export function deleteRoute(code) {
-  write(({ custom, edits }) => {
-    const next = { ...custom };
-    delete next[code];
-    return { custom: next, edits };
-  });
-}
-
-export function resetRoutes() {
-  localStorage.removeItem(STORAGE_KEY);
-  window.dispatchEvent(new Event(CHANGE_EVENT));
+export async function deleteRoute(code) {
+  applyConfig(await accountRequest(`/api/routes/${code}`, { method: "DELETE" }));
 }

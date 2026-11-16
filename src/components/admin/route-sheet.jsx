@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import { COUNTRIES, COUNTRY_LIST, CURRENCIES } from "@/components/admin/countries";
-import { saveRouteRates, useShippingRates } from "@/components/admin/pricing-store";
+import { useShippingRates } from "@/components/admin/pricing-store";
 import { stepsBetween } from "@/components/admin/package-tracking";
 import {
   deleteRoute,
@@ -162,7 +162,23 @@ function RouteForm({ route, onDone }) {
   const [form, setForm] = useState(() => initialForm(route, rates));
   const [errors, setErrors] = useState({});
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // "save" | "delete" while waiting for the server; failures show under the form.
+  const [busy, setBusy] = useState("");
+  const [saveError, setSaveError] = useState("");
   const locked = Boolean(route?.builtIn);
+
+  async function run(kind, action) {
+    setBusy(kind);
+    setSaveError("");
+    try {
+      await action();
+      onDone();
+    } catch (error) {
+      if (error.field) setErrors({ [error.field]: error.message });
+      setSaveError(error.message);
+      setBusy("");
+    }
+  }
 
   function set(changes) {
     setForm((current) => ({ ...current, ...changes }));
@@ -190,29 +206,26 @@ function RouteForm({ route, onDone }) {
 
     const code = locked ? route.code : routeCode(form.from, form.to);
     const previousCode = route && !locked && route.code !== code ? route.code : undefined;
-    saveRoute(
-      {
-        code,
-        from: form.from,
-        to: form.to,
-        currency: form.currency,
-        depart: form.depart,
-        arrive: form.arrive,
-        hub: form.hub.trim(),
-        city: form.city.trim(),
-        branches: Object.fromEntries(
-          form.branches.map(({ key, name, address }) => [
-            key,
-            { name: name.trim(), address: address.trim() },
-          ]),
-        ),
-        defaultBranch: form.defaultBranch,
-      },
-      previousCode,
-    );
+    const saved = {
+      code,
+      from: form.from,
+      to: form.to,
+      currency: form.currency,
+      depart: form.depart,
+      arrive: form.arrive,
+      hub: form.hub.trim(),
+      city: form.city.trim(),
+      branches: Object.fromEntries(
+        form.branches.map(({ key, name, address }) => [
+          key,
+          { name: name.trim(), address: address.trim() },
+        ]),
+      ),
+      defaultBranch: form.defaultBranch,
+    };
     const hasRates = form.normal !== "" || form.express !== "";
-    saveRouteRates(code, hasRates ? { normal: form.normal, express: form.express } : null, previousCode);
-    onDone();
+    const rates = hasRates ? { normal: form.normal, express: form.express } : null;
+    run("save", () => saveRoute(saved, { rates, previousCode, isNew: !route }));
   }
 
   function remove() {
@@ -220,9 +233,7 @@ function RouteForm({ route, onDone }) {
       setConfirmDelete(true);
       return;
     }
-    deleteRoute(route.code);
-    saveRouteRates(route.code, null);
-    onDone();
+    run("delete", () => deleteRoute(route.code));
   }
 
   const hasErrors = Object.keys(errors).length > 0;
@@ -442,19 +453,20 @@ function RouteForm({ route, onDone }) {
             type="button"
             variant="ghost"
             className="text-status-bad hover:text-status-bad"
+            disabled={Boolean(busy)}
             onClick={remove}
           >
             <Trash2 aria-hidden="true" />
             {confirmDelete ? "Click again to delete" : "Delete route"}
           </Button>
         )}
-        {hasErrors && (
+        {(hasErrors || saveError) && (
           <p role="alert" className="text-sm text-status-bad">
-            Fix the highlighted fields.
+            {saveError || "Fix the highlighted fields."}
           </p>
         )}
-        <Button type="submit" form={FORM_ID} className="ml-auto">
-          {route ? "Save changes" : "Add route"}
+        <Button type="submit" form={FORM_ID} className="ml-auto" disabled={Boolean(busy)}>
+          {busy === "save" ? "Saving…" : route ? "Save changes" : "Add route"}
         </Button>
       </SheetFooter>
     </>

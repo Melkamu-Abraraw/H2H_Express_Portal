@@ -48,6 +48,7 @@ export async function accountRequest(url, init) {
   if (!response.ok || !body.success) {
     const error = new Error(body.error || "Something went wrong. Try again.");
     error.field = body.field;
+    error.status = response.status;
     throw error;
   }
   if (body.user) setProfile(body.user);

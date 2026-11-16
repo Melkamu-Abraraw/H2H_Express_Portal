@@ -10,26 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-// What this browser has already dealt with. Notifications start from the first visit, so a
-// long history of old packages and existing staff never floods the list.
-const STORAGE_KEY = "h2h-notifications";
-const MAX_DONE = 300;
-
-function readStore() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY));
-  } catch {
-    return null;
-  }
-}
-
-function writeStore(store) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-  } catch {
-    // Private windows can refuse storage; the list still works until the page closes.
-  }
-}
+// What each person has already dealt with is kept on their account (/api/notifications), so it
+// follows them between devices. The list starts from their first visit, so a long history of
+// old packages and existing staff never floods it.
 
 async function getJson(url) {
   const result = await (await fetch(url, { cache: "no-store" })).json();
@@ -78,15 +61,12 @@ export function NotificationsMenu() {
       Promise.all([
         seeRequests ? getJson("/api/requests") : { requests: [] },
         seePackages ? getJson("/api/packages?recent=1") : { packages: [] },
+        getJson("/api/notifications"),
       ])
-        .then(([requests, packages]) => {
+        .then(([requests, packages, state]) => {
           if (cancelled) return;
-          let current = readStore();
-          if (!current) {
-            current = { baseline: new Date().toISOString(), done: [] };
-            writeStore(current);
-          }
-          setStore(current);
+          // Done items are only read once; after that this browser's copy is the latest.
+          setStore((current) => current ?? { baseline: state.baseline, done: state.done });
           setData({ requests: requests.requests, packages: packages.packages });
         })
         .catch(() => {});
@@ -142,9 +122,12 @@ export function NotificationsMenu() {
   }
 
   function markDone(ids) {
-    const next = { ...store, done: [...store.done, ...ids].slice(-MAX_DONE) };
-    writeStore(next);
-    setStore(next);
+    setStore((current) => ({ ...current, done: [...current.done, ...ids] }));
+    fetch("/api/notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ done: ids }),
+    }).catch(() => {});
   }
 
   const manual = todos.filter((todo) => todo.manual);

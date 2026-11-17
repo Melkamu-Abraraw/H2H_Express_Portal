@@ -1,7 +1,7 @@
 import { requestScope, requireAccess } from "@/lib/server/auth";
 import { getDb } from "@/lib/server/mongodb";
 
-// GET /api/requests: public-form requests waiting for review at the user's branch, oldest first.
+// GET /api/requests: public-form requests waiting for review at the user's branch, newest first.
 export async function GET(request) {
   const access = await requireAccess("requests.view");
   if (access.denied) return access.denied;
@@ -16,7 +16,7 @@ export async function GET(request) {
     const requests = await db
       .collection("requests")
       .find(waiting, { projection: { _id: 0, ipHash: 0, emailKey: 0 } })
-      .sort({ createdAt: 1 })
+      .sort({ createdAt: -1 })
       .toArray();
     return Response.json({ success: true, requests });
   } catch (error) {

@@ -222,6 +222,8 @@ function CaptchaGate({ onPass, notice }) {
 export function ShipExperience({ intro }) {
   const [pass, setPass] = useState(null);
   const [notice, setNotice] = useState("");
+  // Once the request is sent, the confirmation stands on its own without the page heading.
+  const [sent, setSent] = useState(false);
 
   if (RECAPTCHA_KEY && !pass) {
     return (
@@ -234,9 +236,10 @@ export function ShipExperience({ intro }) {
   }
   return (
     <>
-      {intro}
+      {!sent && intro}
       <ShipForm
         pass={pass}
+        onSent={() => setSent(true)}
         onExpire={(message) => {
           setNotice(message);
           setPass(null);
@@ -246,7 +249,7 @@ export function ShipExperience({ intro }) {
   );
 }
 
-function ShipForm({ pass, onExpire }) {
+function ShipForm({ pass, onExpire, onSent }) {
   const [direction, setDirection] = useState("CAET");
   const [shipping, setShipping] = useState("normal");
   const [branchCode, setBranchCode] = useState(DIRECTIONS.CAET.defaultBranch);
@@ -339,6 +342,7 @@ function ShipForm({ pass, onExpire }) {
     try {
       const result = await submitOrder(data);
       setStatus({ state: "done", result });
+      onSent?.();
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
       // The pass lapsed: send them back to the checkbox.

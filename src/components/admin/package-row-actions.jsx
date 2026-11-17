@@ -9,7 +9,7 @@ import { useExchangeRates } from "@/components/admin/exchange-store";
 import { balanceDue, blockedByPayment, currencyOf } from "@/components/admin/package-payments";
 import { stepsFor, trackingTimeline } from "@/components/admin/package-tracking";
 import { useRoutes } from "@/components/admin/routes-store";
-import { pickupBranchFor } from "@/components/admin/shipping-routes";
+import { packageCountries, pickupBranchFor } from "@/components/admin/shipping-routes";
 import { useSettings } from "@/components/admin/settings-store";
 import { Button } from "@/components/ui/button";
 import {
@@ -122,19 +122,25 @@ function branchLabel(name) {
   return name.replace(/hand to hand express/i, "").trim().replace(/^\((.*)\)$/, "$1") || name;
 }
 
-// Branches from Routes, plus the fixed pickup branch for this package's destination.
+// Where the receiver can collect: only branches in the package's destination country, i.e. the
+// branches of routes that start there (to Ethiopia: Addis Ababa; to Canada: the Toronto
+// branches). Plus the fixed pickup branch for that country, if it isn't listed already.
+// No branch there at all (e.g. Uganda): every branch, so the package can still be released.
 function useBranches(pkg) {
   const routes = useRoutes();
-  const branches = [
+  const { to } = packageCountries(pkg);
+  const branchesOf = (list) => [
     ...new Map(
-      routes.flatMap((route) =>
+      list.flatMap((route) =>
         Object.entries(route.branches).map(([code, info]) => [code, { code, name: info.name }]),
       ),
     ).values(),
   ];
+  const local = routes.filter((route) => route.from.code === to.code);
+  const branches = branchesOf(local.length || pickupBranchFor(pkg) ? local : routes);
   const pickup = pickupBranchFor(pkg);
   if (pickup && !branches.some((branch) => branch.code === pickup.code)) {
-    branches.push({ code: pickup.code, name: pickup.name });
+    branches.unshift({ code: pickup.code, name: pickup.name });
   }
   return { branches, pickup };
 }

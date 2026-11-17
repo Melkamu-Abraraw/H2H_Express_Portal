@@ -16,6 +16,7 @@ import { canMoveTo } from "@/components/admin/package-tracking";
 import { PackageStats } from "@/components/admin/package-stats";
 import { useSettings } from "@/components/admin/settings-store";
 import { statusDots } from "@/components/admin/package-views";
+import { currentStepLabel } from "@/components/admin/package-tracking";
 import { ALL, Filter, relativeDay } from "@/components/admin/table-filters";
 import { PackageRouteFlags, PackageRouteLabel } from "@/components/admin/shipping-routes";
 import { Badge } from "@/components/ui/badge";
@@ -395,7 +396,7 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
                         className={`size-1.5 rounded-full ${statusDots[item.status]}`}
                         aria-hidden="true"
                       />
-                      {item.status}
+                      {currentStepLabel(item)}
                     </Badge>
                   </TableCell>
                   <TableCell>

@@ -55,6 +55,21 @@ export function statusFromEvents(events) {
   return STEP_STATUS[events.at(-1).step];
 }
 
+// The package's exact step in a few words, for tables. `status` stays the broader group
+// (it drives filters and counts), so Arrived and Cleared customs still count as In transit.
+export function currentStepLabel(pkg) {
+  switch (pkg.events?.at(-1)?.step) {
+    case "arrived": {
+      const place = pkg.to || LEGS[pkg.route]?.city;
+      return place ? `Arrived in ${place}` : "Arrived";
+    }
+    case "customs":
+      return "Cleared customs";
+    default:
+      return pkg.status;
+  }
+}
+
 // Every step with its event date, or an estimate for steps not reached yet.
 export function trackingTimeline(pkg) {
   const { events } = pkg;

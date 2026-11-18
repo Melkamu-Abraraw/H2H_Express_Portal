@@ -1,4 +1,4 @@
-import { stepsFor, trackingSteps } from "@/components/admin/package-tracking";
+import { lastStep, stepsFor, trackingSteps } from "@/components/admin/package-tracking";
 import { handlingLabels } from "@/lib/handling";
 import { otherCurrency } from "@/lib/exchange";
 import { getExchangeRates } from "@/lib/server/exchange";
@@ -65,9 +65,7 @@ export function escapeHtml(value) {
 // Replies staff can send, by number or word. Each maps to a tracking step.
 export const REPLY_STEPS = [
   { key: "departed", label: "In transit", words: ["intransit", "transit", "shipped", "departed"] },
-  { key: "arrived", label: "Arrived at destination", words: ["arrived"] },
-  { key: "customs", label: "Cleared customs", words: ["customs", "cleared"] },
-  { key: "pickup", label: "Ready for pickup", words: ["ready", "pickup"] },
+  { key: "pickup", label: "Ready for pickup", words: ["ready", "pickup", "arrived"] },
   { key: "delivered", label: "Delivered", words: ["delivered", "collected"] },
 ];
 
@@ -82,7 +80,7 @@ export function replyHelp() {
 }
 
 function stepLabel(pkg) {
-  const key = pkg.events.at(-1).step;
+  const key = lastStep(pkg);
   return stepsFor(pkg).find((step) => step.key === key)?.label ?? key;
 }
 
@@ -117,7 +115,7 @@ export function packageText(pkg, rate = null) {
 // One button per step the package hasn't reached yet.
 export function packageKeyboard(pkg) {
   const keys = trackingSteps(pkg.route).map((step) => step.key);
-  const at = keys.indexOf(pkg.events.at(-1).step);
+  const at = keys.indexOf(lastStep(pkg));
   const labels = new Map(stepsFor(pkg).map((step) => [step.key, step.label]));
   // Same wording as the portal's timeline; the first step (received) is never a button.
   const buttons = REPLY_STEPS.filter((step) => keys.indexOf(step.key) > at).map((step) => ({

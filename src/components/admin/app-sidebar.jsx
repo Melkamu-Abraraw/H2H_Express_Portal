@@ -156,7 +156,15 @@ function usePendingRequests(pathname, enabled) {
 export function AppSidebar() {
   const pathname = usePathname();
   const profile = useProfile();
-  const allowed = (items) => items.filter((item) => can(profile, item.permission));
+  // Sub-items can need their own permission (e.g. bag reports), on top of their parent's.
+  const allowed = (items) =>
+    items
+      .filter((item) => can(profile, item.permission))
+      .map((item) =>
+        item.children
+          ? { ...item, children: item.children.filter((child) => !child.permission || can(profile, child.permission)) }
+          : item,
+      );
   const pending = usePendingRequests(pathname, can(profile, "requests.view"));
   const unread = useChatUnread(can(profile, "chat.use"), pathname);
   const badges = { "/admin/requests": pending, "/admin/chat": unread };

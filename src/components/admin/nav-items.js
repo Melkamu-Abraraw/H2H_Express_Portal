@@ -1,6 +1,6 @@
 import {
   CreditCard,
-  FileText,
+  ShoppingBag,
   House,
   Inbox,
   MapPin,
@@ -30,7 +30,17 @@ export const mainNav = [
   },
   { label: "Requests", href: "/admin/requests", icon: Inbox, permission: "requests.view" },
   { label: "Customers", href: "/admin/customers", icon: Users, permission: "customers.view" },
-  // { label: "Manifests", href: "/admin/manifests", icon: FileText },
+  {
+    label: "Bags",
+    href: "/admin/bags",
+    icon: ShoppingBag,
+    permission: "bags.view",
+    children: [
+      { label: "All bags", href: "/admin/bags" },
+      { label: "Incoming", href: "/admin/bags/incoming" },
+      { label: "Reports", href: "/admin/bags/reports", permission: "bags.reports" },
+    ],
+  },
   {
     label: "Payments",
     href: "/admin/payments",

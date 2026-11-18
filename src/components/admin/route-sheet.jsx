@@ -359,7 +359,7 @@ function RouteForm({ route, onDone }) {
 
         <Section
           title="Tracking steps"
-          description="The same six steps on every route. Only the two cities above change."
+          description="The same four steps on every route. Only the drop-off branch changes."
         >
           <ol className="grid gap-1.5">
             {stepsBetween(form.hub.trim(), form.city.trim()).map((step, index) => (

@@ -155,13 +155,21 @@ async function uploadPhoto(base64) {
   }
 }
 
+// The hidden trap field, and a form sent within seconds of opening: both mean a bot, but browser
+// autofill and password managers can trip them too.
+function looksLikeBot(body) {
+  const trap = body.hp_contact_extra ?? body.website;
+  if (typeof trap === "string" && trap) return true;
+  const started = Number(body.startedAt);
+  return !Number.isFinite(started) || Date.now() - started < MIN_FILL_MS;
+}
+
 // Returns { fake: true } for obvious bots so they think it worked and don't adapt.
 export async function createRequest(db, body, ip) {
-  if (typeof body.website === "string" && body.website) return { fake: true };
-  const started = Number(body.startedAt);
-  if (!Number.isFinite(started) || Date.now() - started < MIN_FILL_MS) return { fake: true };
-
-  checkPass(body.captchaToken);
+  // Someone who ticked reCAPTCHA is a person, even if autofill filled the trap field, so the
+  // weaker checks only apply when reCAPTCHA isn't set up (e.g. local development).
+  if (process.env.RECAPTCHA_SECRET_KEY) checkPass(body.captchaToken);
+  else if (looksLikeBot(body)) return { fake: true };
   const input = parseRequest(body);
 
   const ipHash = createHash("sha256").update(String(ip)).digest("hex").slice(0, 24);

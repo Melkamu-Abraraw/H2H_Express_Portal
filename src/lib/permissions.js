@@ -20,7 +20,7 @@ export const ROLES = [
   {
     value: "warehouse",
     label: "Warehouse",
-    description: "Updates package tracking steps only.",
+    description: "Updates package tracking steps, and dispatches and receives bags.",
   },
 ];
 
@@ -40,6 +40,13 @@ const ACCESS = {
     "routes.manage",
     "settings.view",
     "chat.use",
+    // Bags: everything, including reopening sealed bags, settling exceptions and reports.
+    "bags.view",
+    "bags.create",
+    "bags.dispatch",
+    "bags.receive",
+    "bags.resolve",
+    "bags.reports",
   ],
   front_desk: [
     "dashboard",
@@ -52,8 +59,14 @@ const ACCESS = {
     "customers.view",
     "requests.view",
     "chat.use",
+    // Fills, closes and dispatches bags at their branch, and receives incoming ones.
+    "bags.view",
+    "bags.create",
+    "bags.dispatch",
+    "bags.receive",
   ],
-  warehouse: ["packages.view", "packages.status", "chat.use"],
+  // Moves bags (dispatch and receive) but doesn't fill them.
+  warehouse: ["packages.view", "packages.status", "chat.use", "bags.view", "bags.dispatch", "bags.receive"],
 };
 
 export function isRole(value) {
@@ -81,6 +94,8 @@ const PAGES = [
   ["/admin/staff", "staff.manage"],
   ["/admin/settings", "settings.view"],
   ["/admin/chat", "chat.use"],
+  ["/admin/bags/reports", "bags.reports"],
+  ["/admin/bags", "bags.view"],
 ];
 
 export function pagePermission(pathname) {

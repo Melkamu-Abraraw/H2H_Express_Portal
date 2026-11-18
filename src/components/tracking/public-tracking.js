@@ -7,7 +7,7 @@ import { packages } from "@/components/admin/packages-data";
 import { COUNTRY_LIST } from "@/components/admin/countries";
 import { DIRECTIONS, pickupBranchFor } from "@/components/admin/shipping-routes";
 
-// Timeline wording follows the admin's six steps; `short` labels the progress line.
+// Timeline wording follows the admin's four steps; `short` labels the progress line.
 const STAGES = {
   received: {
     short: "Received",
@@ -18,17 +18,6 @@ const STAGES = {
     short: "Transit",
     title: "In transit",
     message: (c) => `Your package is on its way to ${c.city}.`,
-  },
-  arrived: {
-    short: "Arrived",
-    title: (c) => `Arrived in ${c.city}`,
-    message: (c) =>
-      `Your package has landed in ${c.city} and is going through customs. This usually takes 1–2 days.`,
-  },
-  customs: {
-    short: "Customs",
-    title: "Cleared customs",
-    message: () => "Customs is done. We're getting your package ready for pickup.",
   },
   pickup: {
     short: "Ready",

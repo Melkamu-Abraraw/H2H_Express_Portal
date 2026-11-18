@@ -1,28 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Download, LoaderCircle, Search, StickyNote } from "lucide-react";
 import { endOfDay, format, startOfDay, startOfMonth } from "date-fns";
 import { HANDLING } from "@/lib/handling";
-import { BulkStatusBar } from "@/components/admin/bulk-status-bar";
 import { downloadPackagesCsv } from "@/components/admin/export-packages";
 import { DateRangePicker, useToday } from "@/components/admin/date-range-picker";
 import { PackageRowActions } from "@/components/admin/package-row-actions";
 import { useProfile } from "@/components/admin/profile-store";
 import { can } from "@/lib/permissions";
 import { PaymentCell } from "@/components/admin/payment-cell";
-import { blockedByPayment } from "@/components/admin/package-payments";
-import { canMoveTo } from "@/components/admin/package-tracking";
 import { PackageStats } from "@/components/admin/package-stats";
 import { useSettings } from "@/components/admin/settings-store";
 import { statusDots } from "@/components/admin/package-views";
 import { currentStepLabel } from "@/components/admin/package-tracking";
+import { EXCEPTION_TYPES } from "@/lib/bags";
 import { ALL, Filter, relativeDay } from "@/components/admin/table-filters";
 import { PackageRouteFlags, PackageRouteLabel } from "@/components/admin/shipping-routes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -119,7 +117,6 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
   const [payment, setPayment] = useState(ALL);
   const [statusFilter, setStatusFilter] = useState(ALL);
   const [handling, setHandling] = useState(initialHandling ?? ALL);
-  const [selected, setSelected] = useState(() => new Set());
   const [bulkResult, setBulkResult] = useState(null);
   // undefined = default (this month to date), null = all time.
   // Coming from an alert or a tracking link, show every date so nothing is hidden.
@@ -195,52 +192,6 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
         )),
   );
   const filtered = term || route !== ALL || payment !== ALL || statusFilter !== ALL || handling !== ALL;
-  // Only rows still on screen count as selected, so hidden rows are never changed.
-  const selectedRows = visible.filter((item) => selected.has(item.tracking));
-  const allSelected = visible.length > 0 && selectedRows.length === visible.length;
-  const headerChecked = allSelected ? true : selectedRows.length ? "indeterminate" : false;
-
-  function toggleRow(tracking, checked) {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (checked) next.add(tracking);
-      else next.delete(tracking);
-      return next;
-    });
-    setBulkResult(null);
-  }
-
-  function toggleAll() {
-    setSelected(allSelected ? new Set() : new Set(visible.map((item) => item.tracking)));
-    setBulkResult(null);
-  }
-
-  async function applyBulk(step) {
-    const ahead = selectedRows.filter((item) => canMoveTo(item, step.key));
-    const unpaid = ahead.filter((item) =>
-      blockedByPayment(item, step.key, settings.requirePaymentBeforeDelivery),
-    );
-    const targets = ahead.filter((item) => !unpaid.includes(item)).map((item) => item.tracking);
-    const passed = selectedRows.length - ahead.length;
-    let saved = 0;
-    try {
-      if (targets.length) saved = (await saveStep(targets, step.key)).moved.length;
-    } catch (error) {
-      setBulkResult({ text: `Couldn't update: ${error.message}`, warn: true });
-      return;
-    }
-    const parts = [`Moved ${saved} to “${step.label}”`];
-    if (passed) parts.push(`${passed} skipped (already at or past that step)`);
-    if (unpaid.length) {
-      parts.push(
-        `${unpaid.length} not delivered: balance due (${unpaid.map((item) => item.tracking).join(", ")})`,
-      );
-    }
-    setBulkResult({ text: parts.join(" · "), warn: unpaid.length > 0 });
-    // Keep the unpaid ones selected so staff can deal with them next.
-    setSelected(new Set(unpaid.map((item) => item.tracking)));
-  }
-
   function clearFilters() {
     setSearch("");
     setRoute(ALL);
@@ -327,13 +278,6 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
           </Button>
         </CardHeader>
         <CardContent className="px-0">
-          {canUpdate && selectedRows.length > 0 && (
-            <BulkStatusBar
-              selected={selectedRows}
-              onApply={applyBulk}
-              onClear={() => setSelected(new Set())}
-            />
-          )}
           <p
             role="status"
             className={
@@ -348,15 +292,7 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
           <Table className="[&_td:not(:first-child):not(:last-child)]:px-2 [&_th:not(:first-child):not(:last-child)]:px-2">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-10 pl-4">
-                  <Checkbox
-                    aria-label="Select all shown packages"
-                    checked={headerChecked}
-                    onCheckedChange={toggleAll}
-                    disabled={visible.length === 0}
-                  />
-                </TableHead>
-                <TableHead className="text-muted-foreground">Tracking #</TableHead>
+                <TableHead className="pl-4 text-muted-foreground">Tracking #</TableHead>
                 <TableHead className="text-muted-foreground">Sender</TableHead>
                 <TableHead className="text-muted-foreground">Receiver</TableHead>
                 <TableHead className="text-muted-foreground">Route</TableHead>
@@ -372,19 +308,8 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
             </TableHeader>
             <TableBody>
               {visible.map((item) => (
-                <TableRow
-                  key={item.tracking}
-                  className="h-12"
-                  data-state={selected.has(item.tracking) ? "selected" : undefined}
-                >
-                  <TableCell className="pl-4">
-                    <Checkbox
-                      aria-label={`Select ${item.tracking}`}
-                      checked={selected.has(item.tracking)}
-                      onCheckedChange={(checked) => toggleRow(item.tracking, checked === true)}
-                    />
-                  </TableCell>
-                  <TableCell className="font-mono text-[13px]">{item.tracking}</TableCell>
+                <TableRow key={item.tracking} className="h-12">
+                  <TableCell className="pl-4 font-mono text-[13px]">{item.tracking}</TableCell>
                   <TableCell className="max-w-32 truncate" title={item.sender}>{item.sender}</TableCell>
                   <TableCell className="max-w-32 truncate" title={item.receiver}>{item.receiver}</TableCell>
                   <TableCell>
@@ -398,6 +323,18 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
                       />
                       {currentStepLabel(item)}
                     </Badge>
+                    {(item.bag?.code || item.exception) && (
+                      <div className="mt-0.5 flex flex-wrap gap-1 text-xs">
+                        {item.bag?.code && (
+                          <Link href={`/admin/bags/${item.bag.code}`} className="font-mono text-muted-foreground hover:text-foreground hover:underline">
+                            {item.bag.code}
+                          </Link>
+                        )}
+                        {item.exception && (
+                          <span className="text-status-bad">{EXCEPTION_TYPES[item.exception.type]}</span>
+                        )}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     <PaymentCell pkg={item} />
@@ -443,13 +380,11 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
                           warn: false,
                         });
                       }}
-                      onAdvance={async (step) => {
-                        try {
-                          await saveStep([item.tracking], step);
-                          setBulkResult(null);
-                        } catch (error) {
-                          setBulkResult({ text: `Couldn't update ${item.tracking}: ${error.message}`, warn: true });
-                        }
+                      onHandOver={async () => {
+                        // Errors are shown in the popover, next to the button.
+                        const result = await saveStep([item.tracking], "delivered");
+                        if (!result.moved.length) throw new Error("It isn't ready for pickup any more. Reload the list.");
+                        setBulkResult({ text: `${item.tracking} handed over and marked delivered.`, warn: false });
                       }}
                     />
                   </TableCell>
@@ -458,7 +393,7 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
               {visible.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={11}
+                    colSpan={10}
                     className={`h-32 text-center ${load.state === "error" ? "text-status-bad" : "text-muted-foreground"}`}
                   >
                     {load.state === "loading" ? (

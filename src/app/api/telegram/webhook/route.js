@@ -45,8 +45,9 @@ async function handleButton(query) {
   if (kind === "s") {
     const step = REPLY_STEPS.find((item) => item.key === stepKey);
     if (!step) return answerCallback(query.id);
-    const { moved, unpaid, skipped } = await moveToStep(db, [tracking], step.key, `${personName(query.from)} (Telegram)`);
+    const { moved, unpaid, skipped, inBag } = await moveToStep(db, [tracking], step.key, `${personName(query.from)} (Telegram)`);
     if (moved.length) toast = `${step.label} ✓`;
+    else if (inBag.length) toast = "It's inside a bag; it moves when the bag is dispatched or received.";
     else if (unpaid.length) toast = "Balance still due, so it can't be marked Delivered yet.";
     else if (skipped.length) toast = "Already at or past that step.";
   }
@@ -101,14 +102,15 @@ async function handleReply(message) {
   if (!step) return void (await reply(`Didn't understand "${escapeHtml(message.text)}". Reply with:\n${replyHelp()}`));
 
   const by = personName(message.from);
-  const { moved, skipped, unpaid } = await moveToStep(db, [pkg.tracking], step.key, `${by} (Telegram)`);
+  const { moved, skipped, unpaid, inBag } = await moveToStep(db, [pkg.tracking], step.key, `${by} (Telegram)`);
   if (moved.length) {
     await refreshPost(
       await db.collection("packages").findOne({ tracking: pkg.tracking }, NO_PHOTOS),
       await getExchangeRates(db).catch(() => null),
     );
     await reply(`✅ <b>${escapeHtml(pkg.tracking)}</b> → ${step.label} (by ${escapeHtml(by)})`);
-  } else if (unpaid.length) await reply(`⚠️ ${escapeHtml(pkg.tracking)} still has a balance to pay, so it can't be marked Delivered yet.`);
+  } else if (inBag.length) await reply(`ℹ️ ${escapeHtml(pkg.tracking)} is inside bag ${escapeHtml(pkg.bag?.code ?? "")}; it moves when the bag is dispatched or received.`);
+  else if (unpaid.length) await reply(`⚠️ ${escapeHtml(pkg.tracking)} still has a balance to pay, so it can't be marked Delivered yet.`);
   else if (skipped.length) await reply(`ℹ️ ${escapeHtml(pkg.tracking)} is already at or past "${step.label}".`);
 }
 

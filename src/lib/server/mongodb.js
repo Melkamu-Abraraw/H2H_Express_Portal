@@ -21,6 +21,15 @@ async function connect() {
     db.collection("conversations").createIndex({ key: 1 }, { unique: true }),
     db.collection("messages").createIndex({ conversationId: 1, _id: -1 }),
     db.collection("chat_reads").createIndex({ userId: 1, conversationId: 1 }, { unique: true }),
+    // Bags: one document per physical bag; a package's `bag` field marks the active bag it's in.
+    db.collection("bags").createIndex({ code: 1 }, { unique: true }),
+    db.collection("bags").createIndex({ status: 1, createdAt: -1 }),
+    db.collection("bags").createIndex({ "origin.code": 1, createdAt: -1 }),
+    db.collection("bags").createIndex({ "destination.code": 1, status: 1 }),
+    db.collection("bags").createIndex({ "items.tracking": 1 }),
+    db.collection("packages").createIndex({ "bag.code": 1 }, { sparse: true }),
+    db.collection("bag_exceptions").createIndex({ bagCode: 1, createdAt: 1 }),
+    db.collection("bag_exceptions").createIndex({ status: 1, createdAt: -1 }),
   ]);
   return db;
 }

@@ -139,6 +139,10 @@ const LIST_FIELDS = {
   notes: 1,
   handling: 1,
   date: 1,
+  // The active bag a package is in, its bag history, and any open missing/damaged flag.
+  bag: 1,
+  history: 1,
+  exception: 1,
 };
 
 // GET /api/packages: every package the user's branch can see, newest first.

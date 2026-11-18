@@ -320,7 +320,7 @@ function ShipForm({ pass, onExpire, onSent }) {
       photoMimeType: null,
       startedAt: openedAt.current,
       // Hidden from people; bots fill it in.
-      website: value("website"),
+      hp_contact_extra: value("hp_contact_extra"),
       captchaToken: pass,
     };
 
@@ -380,13 +380,18 @@ function ShipForm({ pass, onExpire, onSent }) {
 
   return (
     <form onSubmit={submit} className="grid min-w-0 scroll-mt-20 gap-4 sm:gap-5" id="send">
-      {/* Honeypot: invisible to people, tempting to bots. */}
+      {/* Honeypot: invisible to people, tempting to bots. Its name means nothing to browser
+          autofill, and the data-* flags tell password managers to leave it alone. */}
       <input
         type="text"
-        name="website"
+        name="hp_contact_extra"
         tabIndex={-1}
         autoComplete="off"
         aria-hidden="true"
+        data-1p-ignore=""
+        data-lpignore="true"
+        data-bwignore=""
+        data-form-type="other"
         className="absolute -left-[9999px] h-0 w-0 opacity-0"
         defaultValue=""
       />

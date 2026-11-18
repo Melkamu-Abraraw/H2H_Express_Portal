@@ -1,24 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { format } from "date-fns";
-import { ChevronDown, CircleCheck, Eye, X } from "lucide-react";
+import { CircleCheck, Eye, Handshake, X } from "lucide-react";
 import { formatMoney } from "@/components/admin/pricing-store";
 import { pickupAmount } from "@/lib/exchange";
 import { useExchangeRates } from "@/components/admin/exchange-store";
-import { balanceDue, blockedByPayment, currencyOf } from "@/components/admin/package-payments";
-import { stepsFor, trackingTimeline } from "@/components/admin/package-tracking";
+import { balanceDue, currencyOf } from "@/components/admin/package-payments";
+import { lastStep, trackingTimeline } from "@/components/admin/package-tracking";
 import { useRoutes } from "@/components/admin/routes-store";
 import { packageCountries, pickupBranchFor } from "@/components/admin/shipping-routes";
-import { useSettings } from "@/components/admin/settings-store";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
@@ -79,42 +72,43 @@ function Timeline({ pkg }) {
   );
 }
 
-function UpdateStatusMenu({ pkg, onAdvance }) {
-  const { requirePaymentBeforeDelivery } = useSettings();
-  const steps = stepsFor(pkg);
-  const reached = steps.findIndex((step) => step.key === pkg.events.at(-1).step);
-  const remaining = steps.slice(reached + 1);
+// A paid package waiting at pickup is handed over in two clicks, so a stray click can't do it.
+function HandOverPanel({ pkg, onHandOver }) {
+  const [state, setState] = useState({ confirming: false, busy: false, error: "" });
+
+  async function confirm() {
+    setState({ confirming: true, busy: true, error: "" });
+    try {
+      await onHandOver();
+    } catch (error) {
+      setState({ confirming: false, busy: false, error: error.message });
+    }
+  }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button className="w-full" disabled={remaining.length === 0}>
-          {remaining.length ? "Update status" : "Delivered"}
-          {remaining.length > 0 && <ChevronDown aria-hidden="true" />}
+    <div className="flex flex-col gap-2">
+      {state.confirming ? (
+        <div className="flex flex-col gap-2 rounded-md border border-brand/50 bg-brand/5 p-3 text-sm">
+          <span>
+            Hand <span className="font-medium">{pkg.tracking}</span> to {pkg.receiver}? Check their photo ID first.
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" disabled={state.busy} onClick={() => setState({ confirming: false, busy: false, error: "" })}>
+              Back
+            </Button>
+            <Button className="flex-1" disabled={state.busy} onClick={confirm}>
+              {state.busy ? "Saving…" : "Confirm hand-over"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button className="w-full" onClick={() => setState({ confirming: true, busy: false, error: "" })}>
+          <Handshake aria-hidden="true" />
+          Hand over to receiver
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-(--radix-dropdown-menu-trigger-width)">
-        <DropdownMenuLabel>Move to</DropdownMenuLabel>
-        {remaining.map((step) => {
-          const blocked = blockedByPayment(pkg, step.key, requirePaymentBeforeDelivery);
-          return (
-            <DropdownMenuItem
-              key={step.key}
-              disabled={blocked}
-              onSelect={() => onAdvance(step.key)}
-              className="flex-col items-start gap-0"
-            >
-              {step.label}
-              {blocked && (
-                <span className="text-xs text-status-warn">
-                  Collect {formatMoney(balanceDue(pkg), currencyOf(pkg))} below first
-                </span>
-              )}
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      )}
+      {state.error && <p className="text-xs text-status-bad">{state.error}</p>}
+    </div>
   );
 }
 
@@ -255,9 +249,20 @@ function PaymentPanel({ pkg }) {
   );
 }
 
-// `canUpdate` / `canCollect`: whether the signed-in role may move the package along or take
+// What moves a package on from where it is now. Statuses aren't changed by hand here: bags move
+// packages to In transit and Ready for pickup; the only action is handing a package over.
+function NextStepNote({ pkg }) {
+  const text = {
+    received: "Put it in a bag to send it. It goes In transit when the bag is dispatched.",
+    departed: "It becomes Ready for pickup when its bag is received at the destination branch.",
+    delivered: "Collected by the receiver.",
+  }[lastStep(pkg)];
+  return text ? <p className="text-xs text-muted-foreground">{text}</p> : null;
+}
+
+// `canUpdate` / `canCollect`: whether the signed-in role may hand the package over or take
 // money for it (the server checks both again).
-export function PackageRowActions({ pkg, onAdvance, onCollect, canUpdate = true, canCollect = true }) {
+export function PackageRowActions({ pkg, onHandOver, onCollect, canUpdate = true, canCollect = true }) {
   const [open, setOpen] = useState(false);
   const summary = [`${pkg.sender} → ${pkg.receiver}`, `${pkg.weight.toFixed(1)} kg`].join(" · ");
 
@@ -294,7 +299,20 @@ export function PackageRowActions({ pkg, onAdvance, onCollect, canUpdate = true,
             </Button>
           </div>
           <Timeline pkg={pkg} />
-          {balanceDue(pkg) > 0 && pkg.events.at(-1).step === "pickup" ? (
+          {pkg.bag?.code ? (
+            <>
+              <PaymentPanel pkg={pkg} />
+              <p className="rounded-md border px-3 py-2 text-sm">
+                In bag{" "}
+                <Link href={`/admin/bags/${pkg.bag.code}`} className="font-mono font-medium hover:underline">
+                  {pkg.bag.code}
+                </Link>
+                <span className="block text-xs text-muted-foreground">
+                  It moves with the bag: In transit when the bag is dispatched, Ready for pickup when it&apos;s received.
+                </span>
+              </p>
+            </>
+          ) : balanceDue(pkg) > 0 && lastStep(pkg) === "pickup" ? (
             canCollect && canUpdate ? (
               // Collecting the balance also marks the package delivered, so no separate status menu.
               <CollectPanel
@@ -315,7 +333,19 @@ export function PackageRowActions({ pkg, onAdvance, onCollect, canUpdate = true,
           ) : (
             <>
               <PaymentPanel pkg={pkg} />
-              {canUpdate && <UpdateStatusMenu pkg={pkg} onAdvance={onAdvance} />}
+              {lastStep(pkg) === "pickup" ? (
+                canUpdate && (
+                  <HandOverPanel
+                    pkg={pkg}
+                    onHandOver={async () => {
+                      await onHandOver();
+                      setOpen(false);
+                    }}
+                  />
+                )
+              ) : (
+                <NextStepNote pkg={pkg} />
+              )}
             </>
           )}
         </PopoverContent>

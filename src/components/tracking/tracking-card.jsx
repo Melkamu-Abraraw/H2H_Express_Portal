@@ -5,8 +5,6 @@ import {
   Handshake,
   Package,
   Plane,
-  PlaneLanding,
-  ShieldCheck,
   Store,
   Wallet,
 } from "lucide-react";
@@ -23,8 +21,6 @@ function etaRange(date) {
 const STEP_ICONS = {
   received: Package,
   departed: Plane,
-  arrived: PlaneLanding,
-  customs: ShieldCheck,
   pickup: Store,
   delivered: Handshake,
 };

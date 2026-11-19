@@ -15,6 +15,7 @@ import { packageViews } from "@/components/admin/package-views";
 // Each item names the permission (see src/lib/permissions.js) needed to see it.
 export const mainNav = [
   { label: "Dashboard", href: "/admin", icon: House, permission: "dashboard" },
+  { label: "Requests", href: "/admin/requests", icon: Inbox, permission: "requests.view" },
   {
     label: "Packages",
     href: "/admin/packages",
@@ -28,8 +29,6 @@ export const mainNav = [
       })),
     ],
   },
-  { label: "Requests", href: "/admin/requests", icon: Inbox, permission: "requests.view" },
-  { label: "Customers", href: "/admin/customers", icon: Users, permission: "customers.view" },
   {
     label: "Bags",
     href: "/admin/bags",
@@ -38,9 +37,10 @@ export const mainNav = [
     children: [
       { label: "All bags", href: "/admin/bags" },
       { label: "Incoming", href: "/admin/bags/incoming" },
-      { label: "Reports", href: "/admin/bags/reports", permission: "bags.reports" },
+      { label: "Package issues", href: "/admin/bags/reports", permission: "bags.reports" },
     ],
   },
+  { label: "Customers", href: "/admin/customers", icon: Users, permission: "customers.view" },
   {
     label: "Payments",
     href: "/admin/payments",

@@ -24,6 +24,9 @@ const PACKAGE_FIELDS = {
   amountPaid: 1,
   weight: 1,
   date: 1,
+  "items.description": 1,
+  "items.qty": 1,
+  "photos.url": 1,
 };
 
 function receiptOut({ _id, receiptNo, ...payment }) {

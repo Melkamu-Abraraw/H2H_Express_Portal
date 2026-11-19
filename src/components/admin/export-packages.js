@@ -1,10 +1,11 @@
 import { format } from "date-fns";
 import { balanceDue, currencyOf } from "@/components/admin/package-payments";
-import { lastStep, stepsFor } from "@/components/admin/package-tracking";
+import { lastStep, packageName, stepsFor } from "@/components/admin/package-tracking";
 import { packageCountries } from "@/components/admin/shipping-routes";
 
 const COLUMNS = [
   ["Tracking #", (item) => item.tracking],
+  ["Package", (item) => packageName(item)],
   ["Sender", (item) => item.sender],
   ["Receiver", (item) => item.receiver],
   ["From", (item) => packageCountries(item).from.name],

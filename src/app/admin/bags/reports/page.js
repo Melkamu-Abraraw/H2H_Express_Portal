@@ -1,7 +1,7 @@
 import { BagsReport } from "@/components/admin/bags-report";
 
 export const metadata = {
-  title: "Bag reports | H2H Express",
+  title: "Package issues | H2H Express",
 };
 
 export default function BagReportsPage() {

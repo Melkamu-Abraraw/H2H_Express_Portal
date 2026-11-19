@@ -7,6 +7,7 @@ import { endOfDay, format, startOfDay, startOfMonth } from "date-fns";
 import { HANDLING } from "@/lib/handling";
 import { downloadPackagesCsv } from "@/components/admin/export-packages";
 import { DateRangePicker, useToday } from "@/components/admin/date-range-picker";
+import { PackagePhotoThumb } from "@/components/admin/package-photos";
 import { PackageRowActions } from "@/components/admin/package-row-actions";
 import { useProfile } from "@/components/admin/profile-store";
 import { can } from "@/lib/permissions";
@@ -14,7 +15,7 @@ import { PaymentCell } from "@/components/admin/payment-cell";
 import { PackageStats } from "@/components/admin/package-stats";
 import { useSettings } from "@/components/admin/settings-store";
 import { statusDots } from "@/components/admin/package-views";
-import { currentStepLabel } from "@/components/admin/package-tracking";
+import { currentStepLabel, packageName } from "@/components/admin/package-tracking";
 import { EXCEPTION_TYPES } from "@/lib/bags";
 import { ALL, Filter, relativeDay } from "@/components/admin/table-filters";
 import { PackageRouteFlags, PackageRouteLabel } from "@/components/admin/shipping-routes";
@@ -106,7 +107,7 @@ const statusOptions = [
   })),
 ];
 
-export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
+export function PackagesTable({ status, initialHandling, initialSearch = "", initialStatus }) {
   const profile = useProfile();
   const canUpdate = can(profile, "packages.status");
   const canCollect = can(profile, "payments.record");
@@ -115,12 +116,12 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
   const [search, setSearch] = useState(initialSearch);
   const [route, setRoute] = useState(ALL);
   const [payment, setPayment] = useState(ALL);
-  const [statusFilter, setStatusFilter] = useState(ALL);
+  const [statusFilter, setStatusFilter] = useState(initialStatus ?? ALL);
   const [handling, setHandling] = useState(initialHandling ?? ALL);
   const [bulkResult, setBulkResult] = useState(null);
   // undefined = default (this month to date), null = all time.
   // Coming from an alert or a tracking link, show every date so nothing is hidden.
-  const [pickedRange, setPickedRange] = useState(initialHandling || initialSearch ? null : undefined);
+  const [pickedRange, setPickedRange] = useState(initialHandling || initialSearch || initialStatus ? null : undefined);
   const today = useToday();
   const settings = useSettings();
   const dateRange =
@@ -187,7 +188,7 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
       (statusFilter === ALL || item.status === statusFilter) &&
       (handling === ALL || (item.events.at(-1).step !== "delivered" && item.handling?.flags?.includes(handling))) &&
       (!term ||
-        [item.tracking, item.sender, item.receiver].some((text) =>
+        [item.tracking, item.sender, item.receiver, packageName(item)].some((text) =>
           text.toLowerCase().includes(term),
         )),
   );
@@ -225,8 +226,8 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
             />
             <Input
               type="search"
-              aria-label="Search by tracking number or name"
-              placeholder="Search tracking # or name..."
+              aria-label="Search by tracking number, name or package"
+              placeholder="Search tracking #, name or package..."
               className="pl-8"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -293,6 +294,7 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
             <TableHeader>
               <TableRow>
                 <TableHead className="pl-4 text-muted-foreground">Tracking #</TableHead>
+                <TableHead className="text-muted-foreground">Package</TableHead>
                 <TableHead className="text-muted-foreground">Sender</TableHead>
                 <TableHead className="text-muted-foreground">Receiver</TableHead>
                 <TableHead className="text-muted-foreground">Route</TableHead>
@@ -310,29 +312,39 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
               {visible.map((item) => (
                 <TableRow key={item.tracking} className="h-12">
                   <TableCell className="pl-4 font-mono text-[13px]">{item.tracking}</TableCell>
+                  <TableCell className="max-w-48">
+                    <div className="flex items-center gap-2">
+                      <PackagePhotoThumb pkg={item} />
+                      <span className="min-w-0 truncate" title={packageName(item)}>
+                        {packageName(item) || <span className="text-muted-foreground">—</span>}
+                      </span>
+                    </div>
+                  </TableCell>
                   <TableCell className="max-w-32 truncate" title={item.sender}>{item.sender}</TableCell>
                   <TableCell className="max-w-32 truncate" title={item.receiver}>{item.receiver}</TableCell>
                   <TableCell>
                     <PackageRouteFlags pkg={item} />
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">
-                      <span
-                        className={`size-1.5 rounded-full ${statusDots[item.status]}`}
-                        aria-hidden="true"
-                      />
-                      {currentStepLabel(item)}
-                    </Badge>
-                    {(item.bag?.code || item.exception) && (
+                    {item.exception ? (
+                      // A missing or damaged package shows its problem instead of a status.
+                      <span className={`text-sm font-medium ${item.exception.type === "missing" ? "text-status-bad" : "text-status-warn"}`}>
+                        {EXCEPTION_TYPES[item.exception.type]}
+                      </span>
+                    ) : (
+                      <Badge variant="outline">
+                        <span
+                          className={`size-1.5 rounded-full ${statusDots[item.status]}`}
+                          aria-hidden="true"
+                        />
+                        {currentStepLabel(item)}
+                      </Badge>
+                    )}
+                    {item.bag?.code && (
                       <div className="mt-0.5 flex flex-wrap gap-1 text-xs">
-                        {item.bag?.code && (
-                          <Link href={`/admin/bags/${item.bag.code}`} className="font-mono text-muted-foreground hover:text-foreground hover:underline">
-                            {item.bag.code}
-                          </Link>
-                        )}
-                        {item.exception && (
-                          <span className="text-status-bad">{EXCEPTION_TYPES[item.exception.type]}</span>
-                        )}
+                        <Link href={`/admin/bags/${item.bag.code}`} className="font-mono text-muted-foreground hover:text-foreground hover:underline">
+                          {item.bag.code}
+                        </Link>
                       </div>
                     )}
                   </TableCell>
@@ -393,7 +405,7 @@ export function PackagesTable({ status, initialHandling, initialSearch = "" }) {
               {visible.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={10}
+                    colSpan={11}
                     className={`h-32 text-center ${load.state === "error" ? "text-status-bad" : "text-muted-foreground"}`}
                   >
                     {load.state === "loading" ? (

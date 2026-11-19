@@ -31,7 +31,36 @@ async function connect() {
     db.collection("bag_exceptions").createIndex({ bagCode: 1, createdAt: 1 }),
     db.collection("bag_exceptions").createIndex({ status: 1, createdAt: -1 }),
   ]);
+  await closeOldLostPackages(db).catch((error) => console.error("Fixing lost packages failed", error));
   return db;
+}
+
+// Packages closed as lost before "Lost" became a final status only got a history line, so they
+// still showed In transit. Gives them the Lost status, dated when they were closed. Does nothing
+// once they're fixed, so it's safe to run on every start.
+async function closeOldLostPackages(db) {
+  const lostEntry = { $last: { $filter: { input: "$history", cond: { $eq: ["$$this.type", "lost"] } } } };
+  const { modifiedCount } = await db.collection("packages").updateMany(
+    {
+      "history.type": "lost",
+      exception: { $exists: false },
+      $expr: { $not: { $in: [{ $arrayElemAt: ["$events.step", -1] }, ["lost", "damaged", "delivered"]] } },
+    },
+    [
+      { $set: { lostEntry } },
+      {
+        $set: {
+          status: "Lost",
+          date: "$lostEntry.at",
+          events: {
+            $concatArrays: ["$events", [{ step: "lost", date: "$lostEntry.at", by: "$lostEntry.by", bag: "$lostEntry.bag" }]],
+          },
+        },
+      },
+      { $unset: "lostEntry" },
+    ],
+  );
+  if (modifiedCount) console.log(`Marked ${modifiedCount} package(s) closed as lost earlier as Lost`);
 }
 
 export function getDb() {

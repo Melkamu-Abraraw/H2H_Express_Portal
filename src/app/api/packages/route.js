@@ -115,7 +115,7 @@ async function emailSender(pkg, trackUrl) {
   }
 }
 
-// List fields for the admin Packages page; contact details and photos stay out of the list.
+// List fields for the admin Packages page; contact details stay out of the list, and photos come as links only.
 const LIST_FIELDS = {
   _id: 0,
   tracking: 1,
@@ -139,6 +139,14 @@ const LIST_FIELDS = {
   notes: 1,
   handling: 1,
   date: 1,
+  // What's inside, shown as the package name.
+  "items.description": 1,
+  "items.qty": 1,
+  "photos.url": 1,
+  // Which status emails went to the customer.
+  notifications: 1,
+  // Money paid back when a package was closed as lost.
+  refund: 1,
   // The active bag a package is in, its bag history, and any open missing/damaged flag.
   bag: 1,
   history: 1,

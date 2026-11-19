@@ -35,10 +35,12 @@ export async function POST(request) {
     // Packages outside the user's branch count as missing, just like ones that don't exist.
     const visible = await db
       .collection("packages")
-      .find({ tracking: { $in: trackings }, ...access.scope }, { projection: { _id: 0, tracking: 1, events: 1 } })
+      .find({ tracking: { $in: trackings }, ...access.scope }, { projection: { _id: 0, tracking: 1, events: 1, exception: 1 } })
       .toArray();
-    // Only packages waiting at pickup can be handed over.
-    const allowed = visible.filter((pkg) => pkg.events?.at(-1)?.step === "pickup").map((pkg) => pkg.tracking);
+    // Only packages waiting at pickup with no open missing/damaged case can be handed over.
+    const allowed = visible
+      .filter((pkg) => pkg.events?.at(-1)?.step === "pickup" && !pkg.exception)
+      .map((pkg) => pkg.tracking);
     const notReady = visible.filter((pkg) => !allowed.includes(pkg.tracking)).map((pkg) => pkg.tracking);
     const outside = trackings.filter((tracking) => !visible.some((pkg) => pkg.tracking === tracking));
     const result = await moveToStep(db, allowed, step, access.user.name);

@@ -54,11 +54,14 @@ const routeOptions = [
 ];
 
 // Where the money was taken: while registering (drop-off) or when the receiver collects (pickup).
-const STAGE_LABELS = { "drop-off": "Drop-off", pickup: "Pickup" };
+// Refunds are money paid back for packages closed as lost; they're negative amounts.
+const STAGE_LABELS = { "drop-off": "Drop-off", pickup: "Pickup", refund: "Refund" };
+const STAGE_DOTS = { "drop-off": "bg-brand", pickup: "bg-status-good", refund: "bg-status-bad" };
 const stageOptions = [
-  { value: ALL, label: "Drop-off & pickup" },
+  { value: ALL, label: "All payments" },
   { value: "drop-off", label: "At drop-off" },
   { value: "pickup", label: "At pickup" },
+  { value: "refund", label: "Refunds" },
 ];
 
 const methodOptions = [
@@ -385,12 +388,7 @@ function LedgerTable({ rows, today }) {
             </TableCell>
             <TableCell>
               <Badge variant="outline">
-                <span
-                  className={`size-1.5 rounded-full ${
-                    item.stage === "pickup" ? "bg-status-good" : "bg-brand"
-                  }`}
-                  aria-hidden="true"
-                />
+                <span className={`size-1.5 rounded-full ${STAGE_DOTS[item.stage] ?? "bg-brand"}`} aria-hidden="true" />
                 {STAGE_LABELS[item.stage] ?? "—"}
               </Badge>
             </TableCell>
@@ -398,7 +396,7 @@ function LedgerTable({ rows, today }) {
             <TableCell>{item.payer}</TableCell>
             <TableCell>{item.method}</TableCell>
             <TableCell className="text-muted-foreground">{item.receivedBy}</TableCell>
-            <TableCell className="pr-4 text-right font-mono text-[13px] font-medium">
+            <TableCell className={`pr-4 text-right font-mono text-[13px] font-medium ${item.amount < 0 ? "text-status-bad" : ""}`}>
               {formatMoney(item.amount, item.currency)}
             </TableCell>
           </TableRow>
@@ -480,6 +478,8 @@ export function PaymentsView() {
   const methodsOf = (tracking) => [...(methodsByTracking.get(tracking) ?? [])];
   const paidByTracking = new Map();
   ledger.forEach((item) => {
+    // A refund isn't money taken at drop-off or pickup.
+    if (item.stage === "refund") return;
     const paid = paidByTracking.get(item.tracking) ?? { "drop-off": 0, pickup: 0 };
     paid[item.stage === "pickup" ? "pickup" : "drop-off"] += item.amount;
     paidByTracking.set(item.tracking, paid);

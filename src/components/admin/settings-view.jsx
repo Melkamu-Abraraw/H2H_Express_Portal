@@ -229,6 +229,50 @@ function PackageRules() {
   );
 }
 
+const CUSTOMER_EMAILS = [
+  { key: "departed", label: "In transit", hint: "When the package's bag is dispatched." },
+  { key: "pickup", label: "Ready for pickup", hint: "When the bag is received at the destination branch. Includes any balance due." },
+  { key: "delivered", label: "Delivered", hint: "When the package is handed over to the receiver." },
+  { key: "lost", label: "Lost or damaged", hint: "When a missing package is closed as lost, or a damaged one as destroyed. Mentions any refund." },
+];
+
+function CustomerEmails() {
+  const settings = useSettings();
+  const form = useDraft(settings.customerEmails);
+
+  function submit(event) {
+    event.preventDefault();
+    form.save(() => saveSettings({ customerEmails: form.values }));
+  }
+
+  return (
+    <SettingsCard
+      title="Customer emails"
+      description="Emails the sender and receiver get as their package moves, when they gave an email address. Each is sent once per package."
+    >
+      <form onSubmit={submit} noValidate className="grid gap-4">
+        {CUSTOMER_EMAILS.map((item) => (
+          <label key={item.key} className="flex items-start gap-2.5 text-sm">
+            <Checkbox
+              checked={form.values[item.key]}
+              onCheckedChange={(checked) => form.change(item.key, checked === true)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="block font-medium">{item.label}</span>
+              <span className="block text-xs text-muted-foreground">{item.hint}</span>
+            </span>
+          </label>
+        ))}
+        <p className="text-xs text-muted-foreground">
+          Emails go out through the mail server set up for the portal (SMTP). Without it, nothing is sent.
+        </p>
+        <SaveRow saved={form.saved} dirty={form.dirty} busy={form.busy} error={form.error} />
+      </form>
+    </SettingsCard>
+  );
+}
+
 function Appearance() {
   const theme = useTheme();
 
@@ -329,6 +373,7 @@ export function SettingsView() {
       <BusinessProfile />
       {can(profile, "exchange.manage") && <ExchangeRate />}
       <PackageRules />
+      <CustomerEmails />
       <Appearance />
     </div>
   );

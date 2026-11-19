@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, LoaderCircle, Plus, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, LoaderCircle, Plus, Search } from "lucide-react";
 import { DateRangePicker, useToday } from "@/components/admin/date-range-picker";
 import { useProfile } from "@/components/admin/profile-store";
 import { ALL, Filter } from "@/components/admin/table-filters";
@@ -23,7 +23,6 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -46,13 +45,16 @@ const STAT_CARDS = [
   { key: BAG_STATUS.READY_FOR_DISPATCH, label: "Ready for dispatch", status: BAG_STATUS.READY_FOR_DISPATCH, detail: "Closed, waiting to leave" },
   { key: BAG_STATUS.IN_TRANSIT, label: "In transit", status: BAG_STATUS.IN_TRANSIT, detail: "On the way" },
   { key: BAG_STATUS.RECEIVED, label: "Received", status: BAG_STATUS.RECEIVED, detail: "Checked in at destination" },
-  { key: BAG_STATUS.EXCEPTION, label: "With exceptions", status: BAG_STATUS.EXCEPTION, detail: "Missing or damaged packages" },
 ];
 
 const cardClass =
   "flex flex-col gap-1 rounded-xl border bg-card p-4 text-left text-card-foreground shadow-xs transition-colors outline-none hover:bg-accent/60 focus-visible:ring-3 focus-visible:ring-ring/50 aria-pressed:border-ring aria-pressed:ring-1 aria-pressed:ring-ring";
 
-const statusOptions = [{ value: ALL, label: "All statuses" }, ...BAG_STATUSES.map(({ value, label }) => ({ value, label }))];
+// Cancelled bags aren't listed, and bags received with problems count as Received.
+const statusOptions = [
+  { value: ALL, label: "All statuses" },
+  ...BAG_STATUSES.filter(({ value }) => value !== BAG_STATUS.CANCELLED && value !== BAG_STATUS.EXCEPTION).map(({ value, label }) => ({ value, label })),
+];
 
 const DATE_FIELDS = [
   { value: "created", label: "Created" },
@@ -80,7 +82,7 @@ function nextAction(bag, profile) {
   if (bag.status === BAG_STATUS.OPEN && atOrigin && can(profile, "bags.create")) return "Add packages";
   if (bag.status === BAG_STATUS.READY_FOR_DISPATCH && atOrigin && can(profile, "bags.dispatch")) return "Dispatch";
   if (bag.status === BAG_STATUS.IN_TRANSIT && atDestination && can(profile, "bags.receive")) return "Receive";
-  if (bag.status === BAG_STATUS.EXCEPTION) return "Review";
+  // Everything else, including received bags, is view only.
   return "View";
 }
 
@@ -131,56 +133,50 @@ function CreateBagDialog({ open, onOpenChange, branches, profile }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
           <DialogHeader>
             <DialogTitle>Create a bag</DialogTitle>
-            <DialogDescription>
-              The bag reference is assigned when you save. You add packages on the next screen.
-            </DialogDescription>
           </DialogHeader>
           <div className="grid flex-1 content-start gap-4 overflow-y-auto border-y p-4">
-            <div className="grid gap-2">
-              <Label htmlFor="bag-origin">Origin branch</Label>
-              {own ? (
-                <Input id="bag-origin" value={profile.branch.name} readOnly className="bg-muted/50" />
-              ) : (
-                <Select value={originCode} onValueChange={(value) => { setOrigin(value); setDestination(""); }}>
-                  <SelectTrigger id="bag-origin" className="w-full">
-                    <SelectValue placeholder="Choose a branch" />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid min-w-0 content-start gap-2">
+                <Label htmlFor="bag-origin">Origin branch</Label>
+                {own ? (
+                  <Input id="bag-origin" value={branchShort(profile.branch)} readOnly className="bg-muted/50" />
+                ) : (
+                  <Select value={originCode} onValueChange={(value) => { setOrigin(value); setDestination(""); }}>
+                    <SelectTrigger id="bag-origin" className="w-full">
+                      <SelectValue placeholder="Choose a branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {originOptions.map((branch) => (
+                        <SelectItem key={branch.code} value={branch.code}>
+                          {branchShort(branch)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {own && !from && (
+                  <p className="text-xs text-status-bad">Your branch isn&apos;t on any route, so it can&apos;t send bags.</p>
+                )}
+              </div>
+              <div className="grid min-w-0 content-start gap-2">
+                <Label htmlFor="bag-destination">Destination branch</Label>
+                <Select value={destination} onValueChange={setDestination}>
+                  <SelectTrigger id="bag-destination" className="w-full">
+                    <SelectValue placeholder="Choose where it's going" />
                   </SelectTrigger>
                   <SelectContent>
-                    {originOptions.map((branch) => (
+                    {destinations.map((branch) => (
                       <SelectItem key={branch.code} value={branch.code}>
-                        {branch.name}
-                        <span className="text-muted-foreground"> · {branch.country}</span>
+                        {branchShort(branch)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              )}
-              {own && !from && (
-                <p className="text-xs text-status-bad">Your branch isn&apos;t on any route, so it can&apos;t send bags.</p>
-              )}
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="bag-destination">Destination branch</Label>
-              <Select value={destination} onValueChange={setDestination}>
-                <SelectTrigger id="bag-destination" className="w-full">
-                  <SelectValue placeholder="Choose where it's going" />
-                </SelectTrigger>
-                <SelectContent>
-                  {destinations.map((branch) => (
-                    <SelectItem key={branch.code} value={branch.code}>
-                      {branch.name}
-                      <span className="text-muted-foreground"> · {branch.country}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Only packages registered at the origin and heading to this branch&apos;s country can go in.
-              </p>
+              </div>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="bag-notes">Notes (optional)</Label>
@@ -212,7 +208,8 @@ export function BagsView() {
   const [destination, setDestination] = useState(ALL);
   const [dateField, setDateField] = useState("created");
   const [range, setRange] = useState(null);
-  const [sort, setSort] = useState({ key: "created", dir: "desc" });
+  // "priority" (no column picked): open bags first, then bags to review, then the rest.
+  const [sort, setSort] = useState({ key: "priority", dir: "asc" });
   const [page, setPage] = useState(1);
   const [data, setData] = useState(null);
   const [load, setLoad] = useState({ state: "loading" });
@@ -284,12 +281,7 @@ export function BagsView() {
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Bags</h1>
-          <p className="text-sm text-muted-foreground">
-            Packages travel between branches in bags. Moving a bag moves every package inside it.
-          </p>
-        </div>
+        <h1 className="text-2xl font-semibold tracking-tight">Bags</h1>
         {can(profile, "bags.create") && (
           <Button onClick={() => setCreating(true)}>
             <Plus aria-hidden="true" />
@@ -298,7 +290,7 @@ export function BagsView() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-5">
         {STAT_CARDS.map((card) => {
           const info = BAG_STATUSES.find((item) => item.value === card.status);
           const active = Boolean(card.status) && status === card.status;
@@ -317,7 +309,7 @@ export function BagsView() {
               <span className="font-mono text-2xl font-semibold tracking-tight">
                 {data ? data.stats[card.key] ?? 0 : "–"}
               </span>
-              <span className={`mt-auto text-sm ${card.key === BAG_STATUS.EXCEPTION && data?.stats[card.key] ? "text-status-bad" : "text-muted-foreground"}`}>
+              <span className="mt-auto text-sm text-muted-foreground">
                 {card.detail}
               </span>
             </button>
@@ -386,9 +378,17 @@ export function BagsView() {
                     <TableCell className="whitespace-nowrap">{when(bag.createdAt, "MMM d, HH:mm")}</TableCell>
                     <TableCell className="whitespace-nowrap">{bag.dispatchedAt ? when(bag.dispatchedAt, "MMM d, HH:mm") : <span className="text-muted-foreground">—</span>}</TableCell>
                     <TableCell className="pr-4 text-right">
-                      <Button asChild size="sm" variant={nextAction(bag, profile) === "View" ? "ghost" : "outline"}>
-                        <Link href={bagUrl(bag.code)}>{nextAction(bag, profile)}</Link>
-                      </Button>
+                      {nextAction(bag, profile) === "View" ? (
+                        <Button asChild size="icon-sm" variant="ghost" title="View bag">
+                          <Link href={bagUrl(bag.code)} aria-label={`View ${bag.code}`}>
+                            <Eye aria-hidden="true" />
+                          </Link>
+                        </Button>
+                      ) : (
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={bagUrl(bag.code)}>{nextAction(bag, profile)}</Link>
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

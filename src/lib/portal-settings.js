@@ -12,7 +12,11 @@ export const DEFAULT_SETTINGS = {
   pickupReminderDays: 3,
   // A fixed business rule (the server enforces it when marking packages delivered).
   requirePaymentBeforeDelivery: true,
+  // Which status emails customers get (sender and receiver, when they gave an email).
+  customerEmails: { departed: true, pickup: true, delivered: true, lost: true },
 };
+
+export const CUSTOMER_EMAIL_STEPS = ["departed", "pickup", "delivered", "lost"];
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -33,6 +37,7 @@ export function withDefaults(saved = {}) {
     business: { ...DEFAULT_SETTINGS.business, ...saved.business },
     pickupReminderDays: saved.pickupReminderDays ?? DEFAULT_SETTINGS.pickupReminderDays,
     requirePaymentBeforeDelivery: true,
+    customerEmails: { ...DEFAULT_SETTINGS.customerEmails, ...saved.customerEmails },
   };
 }
 
@@ -59,6 +64,11 @@ export function parseSettings(body) {
       throw new InvalidSetting("Enter a whole number of days from 1 to 60.", "pickupReminderDays");
     }
     out.pickupReminderDays = days;
+  }
+  if (body?.customerEmails !== undefined) {
+    out.customerEmails = Object.fromEntries(
+      CUSTOMER_EMAIL_STEPS.map((step) => [step, body.customerEmails?.[step] !== false]),
+    );
   }
   return out;
 }

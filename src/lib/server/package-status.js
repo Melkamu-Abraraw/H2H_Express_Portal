@@ -1,4 +1,5 @@
-import { lastStep, statusFromEvents, trackingSteps } from "@/components/admin/package-tracking";
+import { WRITTEN_OFF_STEPS, lastStep, statusFromEvents, trackingSteps } from "@/components/admin/package-tracking";
+import { notifyStatus } from "@/lib/server/package-notify";
 
 // What the admin list needs back after a status change.
 const FIELDS = {
@@ -27,6 +28,11 @@ const FIELDS = {
   bag: 1,
   history: 1,
   exception: 1,
+  "items.description": 1,
+  "items.qty": 1,
+  "photos.url": 1,
+  notifications: 1,
+  refund: 1,
 };
 
 // Moves packages forward to a tracking step. A package is only marked delivered once it is
@@ -44,6 +50,11 @@ export async function moveToStep(db, trackings, step, by) {
   for (const pkg of found) {
     if (pkg.bag?.code) {
       inBag.push(pkg.tracking);
+      continue;
+    }
+    // Lost and damaged packages are closed for good, like delivered ones.
+    if (WRITTEN_OFF_STEPS.includes(lastStep(pkg))) {
+      skipped.push(pkg.tracking);
       continue;
     }
     const keys = trackingSteps(pkg.route).map((item) => item.key);
@@ -74,5 +85,7 @@ export async function moveToStep(db, trackings, step, by) {
   }
 
   const missing = trackings.filter((tracking) => !found.some((pkg) => pkg.tracking === tracking));
+  // Customers are emailed for the step reached (In transit, Ready for pickup or Delivered).
+  notifyStatus(db, moved.map((pkg) => pkg.tracking), step);
   return { moved, skipped, unpaid, missing, inBag };
 }

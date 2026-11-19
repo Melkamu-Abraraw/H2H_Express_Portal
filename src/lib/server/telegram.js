@@ -81,6 +81,8 @@ export function replyHelp() {
 
 function stepLabel(pkg) {
   const key = lastStep(pkg);
+  if (key === "lost") return "Lost";
+  if (key === "damaged") return "Damaged";
   return stepsFor(pkg).find((step) => step.key === key)?.label ?? key;
 }
 
@@ -115,6 +117,8 @@ export function packageText(pkg, rate = null) {
 // One button per step the package hasn't reached yet.
 export function packageKeyboard(pkg) {
   const keys = trackingSteps(pkg.route).map((step) => step.key);
+  // A lost or damaged package is closed: no buttons.
+  if (["lost", "damaged"].includes(lastStep(pkg))) return { inline_keyboard: [] };
   const at = keys.indexOf(lastStep(pkg));
   const labels = new Map(stepsFor(pkg).map((step) => [step.key, step.label]));
   // Same wording as the portal's timeline; the first step (received) is never a button.

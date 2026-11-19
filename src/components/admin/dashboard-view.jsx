@@ -19,6 +19,7 @@ import { HANDLING } from "@/lib/handling";
 import { statusFromEvents } from "@/components/admin/package-tracking";
 import { RecentPackages } from "@/components/admin/recent-packages";
 import { useProfile } from "@/components/admin/profile-store";
+import { can } from "@/lib/permissions";
 import { useToday } from "@/components/admin/date-range-picker";
 import { balanceDue, totalsByCurrency } from "@/components/admin/package-payments";
 import { formatMoney } from "@/components/admin/pricing-store";
@@ -299,10 +300,42 @@ function StatusCard({ packages }) {
   );
 }
 
-function buildAlerts(packages, today, pickupDays) {
+// Packages found missing or damaged when their bag was opened, grouped by problem (across all
+// bags), until a manager resolves them on the Package issues page. Checked before delivered
+// packages are dropped: a damaged package can be handed over while its case is still open.
+function bagIssueAlerts(packages) {
+  const of = (type) => packages.filter((pkg) => pkg.exception?.type === type);
+  const bags = (list) => new Set(list.map((pkg) => pkg.exception.bag)).size;
+  const missing = of("missing");
+  const damaged = of("damaged");
+  return [
+    {
+      id: "bag-missing",
+      severity: "critical",
+      count: missing.length,
+      trackings: missing.map((pkg) => pkg.tracking),
+      title: "Missing",
+      detail: `From ${bags(missing)} ${bags(missing) === 1 ? "bag" : "bags"} · Resolve in Package issues`,
+      href: "/admin/bags/reports",
+    },
+    {
+      id: "bag-damaged",
+      severity: "warning",
+      count: damaged.length,
+      trackings: damaged.map((pkg) => pkg.tracking),
+      title: "Damaged",
+      detail: `From ${bags(damaged)} ${bags(damaged) === 1 ? "bag" : "bags"} · Resolve in Package issues`,
+      href: "/admin/bags/reports",
+    },
+  ];
+}
+
+function buildAlerts(packages, today, pickupDays, { bagIssues = false } = {}) {
   const age = (date) => differenceInCalendarDays(today, date);
+  const fromBags = bagIssues ? bagIssueAlerts(packages) : [];
   // Delivered packages never raise alerts; the last tracking step is the source of truth.
-  packages = packages.filter((pkg) => pkg.events.at(-1).step !== "delivered");
+  // Lost packages are closed too, so they raise nothing either.
+  packages = packages.filter((pkg) => !["delivered", "lost", "damaged"].includes(pkg.events.at(-1).step));
   const pickup = packages.filter((pkg) => pkg.status === "Ready for pickup");
   const waiting = pickup.filter((pkg) => age(lastUpdate(pkg)) > pickupDays);
   const owing = pickup.filter((pkg) => balanceDue(pkg) > 0);
@@ -330,6 +363,7 @@ function buildAlerts(packages, today, pickupDays) {
     };
   });
   return [
+    ...fromBags,
     ...flagged,
     {
       id: "owing",
@@ -356,7 +390,7 @@ function buildAlerts(packages, today, pickupDays) {
       trackings: stale.map((pkg) => pkg.tracking),
       title: "No update",
       detail: `${STALE_TRANSIT_DAYS}+ days in transit`,
-      href: "/admin/packages/in-transit",
+      href: `/admin/packages?status=${encodeURIComponent("In transit")}`,
     },
   ].filter((alert) => alert.count > 0);
 }
@@ -560,7 +594,10 @@ export function DashboardView() {
 
   const ready = data.state === "ready" && today;
   const dashboard = ready ? buildDashboard(data.packages, today, range) : null;
-  const alerts = ready ? buildAlerts(data.packages, today, pickupReminderDays) : [];
+  // Owners and managers resolve bag exceptions, so they see them here.
+  const alerts = ready
+    ? buildAlerts(data.packages, today, pickupReminderDays, { bagIssues: can(profile, "bags.resolve") })
+    : [];
 
   return (
     <main className="flex flex-1 flex-col gap-4 px-4 pt-3 pb-4 md:px-6 md:pt-4 md:pb-6">

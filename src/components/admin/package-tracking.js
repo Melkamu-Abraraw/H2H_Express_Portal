@@ -12,6 +12,9 @@ const STEP_STATUS = {
   departed: "In transit",
   pickup: "Ready for pickup",
   delivered: "Delivered",
+  // Final statuses, like Delivered: the package was lost, or damaged beyond delivery, on the way.
+  lost: "Lost",
+  damaged: "Damaged",
   // Packages from the earlier six-step flow may still end on one of these; both were in transit.
   arrived: "In transit",
   customs: "In transit",
@@ -27,6 +30,14 @@ export function stepKey(key) {
 // The package's latest step, in today's four steps.
 export function lastStep(pkg) {
   return stepKey(pkg.events?.at(-1)?.step);
+}
+
+// Steps that end a package's journey without delivery.
+export const WRITTEN_OFF_STEPS = ["lost", "damaged"];
+
+// Lost or damaged on the way: the package's journey is over and nothing moves it again.
+export function isWrittenOff(pkg) {
+  return WRITTEN_OFF_STEPS.includes(lastStep(pkg));
 }
 
 // Typical days from one step to the next, used for estimates.
@@ -63,6 +74,14 @@ export function statusFromEvents(events) {
   return STEP_STATUS[events.at(-1).step];
 }
 
+// What's in the package, from its item descriptions: "Clothes × 2, Shoes".
+export function packageName(pkg) {
+  return (pkg.items ?? [])
+    .map((item) => (item.qty > 1 ? `${item.description} × ${item.qty}` : item.description))
+    .filter(Boolean)
+    .join(", ");
+}
+
 // The package's step in a few words, for tables.
 export function currentStepLabel(pkg) {
   return STEP_STATUS[pkg.events?.at(-1)?.step] ?? pkg.status;
@@ -77,6 +96,16 @@ export function trackingTimeline(pkg) {
   const last = events.at(-1);
   const current = stepKey(last.step);
   let pending = 0;
+
+  // A lost or damaged package shows the steps it reached, then where it ended: no estimates.
+  if (WRITTEN_OFF_STEPS.includes(current)) {
+    return [
+      ...stepsFor(pkg)
+        .filter((step) => reached.has(step.key))
+        .map((step) => ({ ...step, date: reached.get(step.key), state: "done" })),
+      { key: current, label: STEP_STATUS[current], date: last.date, state: "lost" },
+    ];
+  }
 
   return stepsFor(pkg).map((step) => {
     const date = reached.get(step.key);
@@ -100,6 +129,7 @@ export function withStep(pkg, key, date = new Date()) {
 
 // A package can only move forward to a step it has not reached yet.
 export function canMoveTo(pkg, key) {
+  if (isWrittenOff(pkg)) return false;
   const keys = trackingSteps(pkg.route).map((step) => step.key);
   return keys.indexOf(key) > keys.indexOf(lastStep(pkg));
 }

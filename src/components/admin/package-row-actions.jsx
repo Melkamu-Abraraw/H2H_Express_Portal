@@ -8,7 +8,7 @@ import { formatMoney } from "@/components/admin/pricing-store";
 import { pickupAmount } from "@/lib/exchange";
 import { useExchangeRates } from "@/components/admin/exchange-store";
 import { balanceDue, currencyOf } from "@/components/admin/package-payments";
-import { lastStep, trackingTimeline } from "@/components/admin/package-tracking";
+import { isWrittenOff, lastStep, trackingTimeline } from "@/components/admin/package-tracking";
 import { useRoutes } from "@/components/admin/routes-store";
 import { packageCountries, pickupBranchFor } from "@/components/admin/shipping-routes";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ const dotStyles = {
   done: "bg-status-good",
   current: "bg-brand ring-4 ring-brand/25",
   upcoming: "bg-muted-foreground/40",
+  lost: "bg-status-bad ring-4 ring-status-bad/25",
 };
 
 function IconAction({ label, children }) {
@@ -217,10 +218,26 @@ function CollectPanel({ pkg, onCollect }) {
   );
 }
 
+// A lost package: closed for good, with any refund that was given.
+function LostPanel({ pkg }) {
+  const currency = currencyOf(pkg);
+  return (
+    <div className="flex flex-col gap-0.5 rounded-md border border-status-bad/30 bg-status-bad/5 px-3 py-2 text-sm">
+      <span className="font-medium text-status-bad">{lastStep(pkg) === "damaged" ? "Closed as damaged" : "Closed as lost"}</span>
+      <span className="text-xs text-muted-foreground">
+        {pkg.refund?.amount > 0
+          ? `Refunded ${formatMoney(pkg.refund.amount, currency)} (${pkg.refund.method}) · ${pkg.refund.receiptNo}`
+          : `No refund · paid ${formatMoney(pkg.amountPaid, currency)} of ${formatMoney(pkg.charge, currency)}`}
+      </span>
+    </div>
+  );
+}
+
 function PaymentPanel({ pkg }) {
   const currency = currencyOf(pkg);
   const due = balanceDue(pkg);
   const local = pickupAmount(pkg, due, useExchangeRates());
+  if (isWrittenOff(pkg)) return <LostPanel pkg={pkg} />;
 
   if (due === 0) {
     return (
@@ -299,7 +316,17 @@ export function PackageRowActions({ pkg, onHandOver, onCollect, canUpdate = true
             </Button>
           </div>
           <Timeline pkg={pkg} />
-          {pkg.bag?.code ? (
+          {pkg.exception ? (
+            // An open missing/damaged case: no status actions until it's closed on Package issues.
+            <p className="rounded-md border border-status-bad/30 bg-status-bad/5 px-3 py-2 text-sm">
+              <span className="font-medium text-status-bad">
+                {pkg.exception.type === "missing" ? "Missing package" : "Damaged package"}
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Waiting for a decision on Package issues.
+              </span>
+            </p>
+          ) : pkg.bag?.code ? (
             <>
               <PaymentPanel pkg={pkg} />
               <p className="rounded-md border px-3 py-2 text-sm">

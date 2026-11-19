@@ -20,8 +20,15 @@ export const BAG_STATUSES = [
   { value: BAG_STATUS.CANCELLED, label: "Cancelled", dot: "bg-muted-foreground", pill: "bg-muted text-muted-foreground" },
 ];
 
+// A bag received with missing or damaged packages is still a received bag; its problems are
+// followed up on the Package issues page, so staff see it as Received.
+export function shownStatus(status) {
+  return status === BAG_STATUS.EXCEPTION ? BAG_STATUS.RECEIVED : status;
+}
+
 export function bagStatusInfo(status) {
-  return BAG_STATUSES.find((item) => item.value === status) ?? BAG_STATUSES[0];
+  const shown = shownStatus(status);
+  return BAG_STATUSES.find((item) => item.value === shown) ?? BAG_STATUSES[0];
 }
 
 // The only moves a bag can make. Anything else is refused by the API.
@@ -62,8 +69,12 @@ export const RESOLUTIONS = {
   ],
   damaged: [
     { value: "accepted", label: "Handled: close the case" },
+    { value: "destroyed", label: "Destroyed: close as damaged" },
   ],
 };
+
+// Outcomes that end the package's journey: Lost (missing) or Damaged (destroyed). A refund can be recorded.
+export const LOST_RESOLUTIONS = ["lost", "destroyed"];
 
 // Lines on a package's own history, in plain words for staff.
 export const HISTORY_LABELS = {
@@ -75,7 +86,8 @@ export const HISTORY_LABELS = {
   missing: "Missing when the bag was opened",
   damaged: "Arrived damaged",
   found: "Found after being reported missing",
-  lost: "Written off as lost",
+  lost: "Closed as lost",
+  destroyed: "Destroyed · closed as damaged",
   exception_closed: "Damage case closed",
 };
 

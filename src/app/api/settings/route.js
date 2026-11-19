@@ -2,7 +2,7 @@ import { InvalidSetting, parseSettings, withDefaults } from "@/lib/portal-settin
 import { requireAccess } from "@/lib/server/auth";
 import { getDb } from "@/lib/server/mongodb";
 
-// PUT /api/settings: { business?, pickupReminderDays? }. Only the keys sent change.
+// PUT /api/settings: { business?, pickupReminderDays?, customerEmails? }. Only the keys sent change.
 export async function PUT(request) {
   const access = await requireAccess("settings.view");
   if (access.denied) return access.denied;

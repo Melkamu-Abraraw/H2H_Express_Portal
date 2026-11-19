@@ -1,10 +1,11 @@
 import { ObjectId } from "mongodb";
 import { COUNTRIES } from "@/components/admin/countries";
 import { DIRECTIONS } from "@/components/admin/shipping-routes";
-import { BAG_STATUS, BAG_TRANSITIONS, DELAY_DAYS, RESOLUTIONS, bagWeight } from "@/lib/bags";
+import { BAG_STATUS, BAG_TRANSITIONS, DELAY_DAYS, LOST_RESOLUTIONS, RESOLUTIONS, bagWeight } from "@/lib/bags";
 import { can } from "@/lib/permissions";
 import { getConfig } from "@/lib/server/config";
 import { nextSequence } from "@/lib/server/mongodb";
+import { notifyStatus } from "@/lib/server/package-notify";
 import { syncPackagePosts } from "@/lib/server/telegram";
 
 // Bags carry packages between branches. Rules (also see lib/bags):
@@ -206,11 +207,17 @@ export async function eligiblePackages(db, user, code, search) {
   const filter = eligibleFilter(bag);
   if (term) {
     const pattern = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    filter.$or = [{ tracking: pattern }, { sender: pattern }, { receiver: pattern }];
+    filter.$or = [{ tracking: pattern }, { sender: pattern }, { receiver: pattern }, { "items.description": pattern }];
   }
   return db
     .collection("packages")
-    .find(filter, { projection: { _id: 0, tracking: 1, sender: 1, receiver: 1, to: 1, weight: 1, status: 1, createdAt: 1 } })
+    .find(filter, {
+      projection: {
+        _id: 0, tracking: 1, sender: 1, receiver: 1, route: 1, from: 1, to: 1, weight: 1, status: 1, createdAt: 1,
+        // Shown as the package's name and photo.
+        "items.description": 1, "items.qty": 1, "photos.url": 1,
+      },
+    })
     .sort({ createdAt: 1 })
     .limit(300)
     .toArray();
@@ -349,13 +356,26 @@ export async function reopenBag(db, user, code, reason) {
   });
 }
 
+// A bag that never held a package: nothing refers to it, so cancelling it leaves no trace.
+export function neverFilled(bag) {
+  return !bag.items?.length && !bag.events?.some((event) => event.type === "packages_added");
+}
+
 export async function cancelBag(db, user, code, reason) {
   const notes = text(reason, 500);
-  if (!notes) throw new BagError("Say why the bag is being cancelled.");
   return inTransaction(db, async (session) => {
     const bag = await loadBag(db, code, session);
     if (!visible(user, bag) || !atOrigin(user, bag)) throw new BagError("Only the origin branch can cancel this bag.", 403);
     requireStatus(bag, "cancel");
+    if (neverFilled(bag)) {
+      const { deletedCount } = await db.collection("bags").deleteOne(
+        { _id: bag._id, status: bag.status, items: { $size: 0 } },
+        { session },
+      );
+      if (!deletedCount) throw new BagError("Someone else changed this bag. Reload and try again.", 409);
+      return { deleted: true };
+    }
+    if (!notes) throw new BagError("Say why the bag is being cancelled.");
     const now = new Date();
     const to = BAG_TRANSITIONS.cancel.to;
     await moveBag(db, session, bag, "cancel", to, { cancelledBy: actor(user), cancelledAt: now, cancelReason: notes }, bagEvent("cancelled", bag, user, { to, at: now, notes }));
@@ -416,6 +436,8 @@ export async function dispatchBag(db, user, code, body) {
   });
   // Mirror the change in the Telegram group; failures are logged, not fatal.
   await syncPackagePosts(db, result.trackings).catch((error) => console.error("Telegram sync failed", error));
+  // Customers hear that their package is on its way (sent after the response).
+  notifyStatus(db, result.trackings, "departed");
   return { status: result.status, moved: result.trackings.length };
 }
 
@@ -449,7 +471,6 @@ export async function receiveBag(db, user, code, body) {
     const missing = group("missing");
     const damaged = group("damaged");
     const discrepancies = missing.length + damaged.length;
-    if (discrepancies && !notes) throw new BagError("Describe what was wrong before completing the receipt.");
     const to = discrepancies ? BAG_STATUS.EXCEPTION : BAG_STATUS.RECEIVED;
     const receipt = {
       expected: items.length,
@@ -532,16 +553,26 @@ export async function receiveBag(db, user, code, body) {
     return { status: to, receipt, arrived: arriving.map((item) => item.tracking) };
   });
   await syncPackagePosts(db, result.arrived).catch((error) => console.error("Telegram sync failed", error));
+  // Only packages that were checked in; missing ones get nothing until they're found.
+  notifyStatus(db, result.arrived, "pickup");
   return { status: result.status, receipt: result.receipt };
 }
 
 // ---------------------------------------------------------------------------------------------
 // Exceptions
 
+const REFUND_METHODS = ["Cash", "Transfer"];
+
+// body: { resolution, notes?, refund?: { amount, method } }. Lost and destroyed close the
+// package for good (final status Lost); a refund of what the customer paid can be recorded.
 export async function resolveException(db, user, id, body) {
   if (typeof id !== "string" || !ObjectId.isValid(id)) throw new BagError("Exception not found", 404);
   const notes = text(body?.notes, 1000);
-  if (!notes) throw new BagError("Add a note on how this was resolved.");
+  const refundAmount = Math.round((Number(body?.refund?.amount) || 0) * 100) / 100;
+  const refundMethod = REFUND_METHODS.includes(body?.refund?.method) ? body.refund.method : "Cash";
+  if (refundAmount < 0) throw new BagError("The refund can't be negative.");
+  // Numbered outside the transaction: a retried transaction may skip a number, never reuse one.
+  const refundNo = refundAmount > 0 ? `RFD-${String(await nextSequence(db, "refund")).padStart(5, "0")}` : null;
 
   return inTransaction(db, async (session) => {
     const exceptions = db.collection("bag_exceptions");
@@ -554,22 +585,83 @@ export async function resolveException(db, user, id, body) {
     if (!RESOLUTIONS[exception.type]?.some((option) => option.value === resolution)) {
       throw new BagError("Choose how it was resolved.");
     }
+    const closesAsLost = LOST_RESOLUTIONS.includes(resolution);
+    if (!closesAsLost && refundAmount > 0) throw new BagError("A refund is only recorded for lost packages.");
+
+    const packages = db.collection("packages");
+    const pkg = await packages.findOne({ tracking: exception.tracking }, { session, projection: { photos: 0 } });
+    if (!pkg) throw new BagError("Package not found", 404);
+    if (closesAsLost && pkg.events?.at(-1)?.step === "delivered") {
+      throw new BagError("This package was already handed over, so it can't be closed as lost.", 409);
+    }
+    if (refundAmount > (pkg.amountPaid ?? 0)) {
+      throw new BagError(`The refund can't be more than what was paid (${pkg.currency ?? ""} ${(pkg.amountPaid ?? 0).toFixed(2)}).`);
+    }
 
     const now = new Date();
     const { matchedCount } = await exceptions.updateOne(
       { _id: exception._id, status: "open" },
-      { $set: { status: "resolved", resolution, resolutionNotes: notes, resolvedBy: actor(user), resolvedAt: now } },
+      {
+        $set: {
+          status: "resolved",
+          resolution,
+          resolutionNotes: notes,
+          resolvedBy: actor(user),
+          resolvedAt: now,
+          ...(refundAmount > 0 && { refund: { amount: refundAmount, method: refundMethod, receiptNo: refundNo } }),
+        },
+      },
       { session },
     );
     if (!matchedCount) throw new BagError("This exception is already resolved.", 409);
 
-    const packages = db.collection("packages");
-    const historyType = resolution === "found" ? "found" : resolution === "lost" ? "lost" : "exception_closed";
-    const update = {
-      $push: { history: historyEntry(historyType, bag, user, now, { branch: bag.destination.code, notes }) },
-      $unset: { exception: "" },
-    };
-    await packages.updateOne({ tracking: exception.tracking }, update, { session });
+    const historyType = resolution === "found" ? "found" : closesAsLost ? resolution : "exception_closed";
+    const entry = historyEntry(historyType, bag, user, now, {
+      branch: bag.destination.code,
+      ...(notes && { notes }),
+      ...(refundAmount > 0 && { refund: refundAmount }),
+    });
+
+    if (closesAsLost) {
+      // The journey ends here: final status Lost (missing) or Damaged (destroyed); any unpaid
+      // balance is cancelled (see balanceDue).
+      const final = resolution === "destroyed" ? { step: "damaged", status: "Damaged" } : { step: "lost", status: "Lost" };
+      await packages.updateOne(
+        { tracking: pkg.tracking },
+        {
+          $push: { events: { step: final.step, date: now, by: user.name, bag: bag.code, branch: bag.destination.code }, history: entry },
+          $set: {
+            status: final.status,
+            date: now,
+            ...(refundAmount > 0 && { refund: { amount: refundAmount, method: refundMethod, receiptNo: refundNo, at: now, by: user.name } }),
+          },
+          $unset: { exception: "" },
+        },
+        { session },
+      );
+      // The refund goes in the payments ledger as money paid back, so collected totals drop.
+      if (refundAmount > 0) {
+        await db.collection("payments").insertOne(
+          {
+            receiptNo: refundNo,
+            tracking: pkg.tracking,
+            payer: pkg.sender,
+            route: pkg.route,
+            currency: pkg.currency,
+            charge: pkg.charge,
+            amount: -refundAmount,
+            method: refundMethod,
+            stage: "refund",
+            branch: { code: bag.origin.code, name: bag.origin.name },
+            receivedBy: user.name,
+            date: now,
+          },
+          { session },
+        );
+      }
+    } else {
+      await packages.updateOne({ tracking: pkg.tracking }, { $push: { history: entry }, $unset: { exception: "" } }, { session });
+    }
     // A missing package that turns up is ready for pickup at the destination branch now.
     if (resolution === "found") {
       await packages.updateOne(
@@ -588,9 +680,11 @@ export async function resolveException(db, user, id, body) {
       const to = BAG_TRANSITIONS.settle.to;
       await moveBag(db, session, bag, "settle", to, { settledAt: now }, bagEvent("exceptions_resolved", bag, user, { to, at: now }));
     }
-    return { resolved: id, tracking: exception.tracking, found: resolution === "found" };
+    return { resolved: id, tracking: exception.tracking, found: resolution === "found", lost: closesAsLost, refund: refundAmount };
   }).then(async (result) => {
-    if (result.found) await syncPackagePosts(db, [result.tracking]).catch(() => {});
+    if (result.found || result.lost) await syncPackagePosts(db, [result.tracking]).catch(() => {});
+    if (result.found) notifyStatus(db, [result.tracking], "pickup");
+    if (result.lost) notifyStatus(db, [result.tracking], "lost");
     return result;
   });
 }
@@ -610,6 +704,12 @@ const SORTS = {
   received: "receivedAt",
 };
 
+// The default order: bags staff should act on first. Open bags (being filled), then bags to
+// review (received with missing or damaged packages), then the rest along the journey.
+// Bags received with problems count as received.
+const PRIORITY = [BAG_STATUS.OPEN, BAG_STATUS.READY_FOR_DISPATCH, BAG_STATUS.IN_TRANSIT, BAG_STATUS.RECEIVED];
+const RECEIVED_ANY = [BAG_STATUS.RECEIVED, BAG_STATUS.EXCEPTION];
+
 function dayRange(from, to) {
   const start = from ? new Date(`${from}T00:00:00`) : null;
   const end = to ? new Date(`${to}T23:59:59.999`) : null;
@@ -623,13 +723,16 @@ function dayRange(from, to) {
 const LIST_FIELDS = { items: 0, events: 0 };
 
 export async function listBags(db, user, params) {
-  const scope = bagScope(user);
+  // Cancelled bags never travelled, so the list and its counts leave them out. Their pages
+  // still open from a direct link.
+  const scope = { ...bagScope(user), status: { $ne: BAG_STATUS.CANCELLED } };
   const filter = { ...scope };
   const and = [];
   const q = text(params.get("q"), 40).toUpperCase();
   if (q) and.push({ code: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") } });
   const status = params.get("status");
-  if (status && Object.values(BAG_STATUS).includes(status)) and.push({ status });
+  if (status === BAG_STATUS.RECEIVED) and.push({ status: { $in: RECEIVED_ANY } });
+  else if (status && status !== BAG_STATUS.CANCELLED && Object.values(BAG_STATUS).includes(status)) and.push({ status });
   const origin = text(params.get("origin"), 20);
   if (origin) and.push({ "origin.code": origin });
   const destination = text(params.get("destination"), 20);
@@ -640,14 +743,31 @@ export async function listBags(db, user, params) {
   }
   if (and.length) filter.$and = and;
 
-  const sortField = SORTS[params.get("sort")] ?? "createdAt";
+  const sortField = SORTS[params.get("sort")];
   const direction = params.get("dir") === "asc" ? 1 : -1;
   const pageSize = Math.min(100, Math.max(5, Number.parseInt(params.get("pageSize"), 10) || 20));
   const page = Math.max(1, Number.parseInt(params.get("page"), 10) || 1);
 
   const bags = db.collection("bags");
   const [rows, total, counts, branches] = await Promise.all([
-    bags.find(filter, { projection: LIST_FIELDS }).sort({ [sortField]: direction, _id: -1 }).skip((page - 1) * pageSize).limit(pageSize).toArray(),
+    sortField
+      ? bags.find(filter, { projection: LIST_FIELDS }).sort({ [sortField]: direction, _id: -1 }).skip((page - 1) * pageSize).limit(pageSize).toArray()
+      : bags
+          .aggregate([
+            { $match: filter },
+            {
+              $addFields: {
+                priority: {
+                  $indexOfArray: [PRIORITY, { $cond: [{ $eq: ["$status", BAG_STATUS.EXCEPTION] }, BAG_STATUS.RECEIVED, "$status"] }],
+                },
+              },
+            },
+            { $sort: { priority: 1, createdAt: -1, _id: -1 } },
+            { $skip: (page - 1) * pageSize },
+            { $limit: pageSize },
+            { $project: { ...LIST_FIELDS, priority: 0 } },
+          ])
+          .toArray(),
     bags.countDocuments(filter),
     bags.aggregate([{ $match: scope }, { $group: { _id: "$status", count: { $sum: 1 } } }]).toArray(),
     allBranches(db),
@@ -657,6 +777,7 @@ export async function listBags(db, user, params) {
     total: counts.reduce((sum, row) => sum + row.count, 0),
     ...Object.fromEntries(Object.values(BAG_STATUS).map((value) => [value, byStatus[value] ?? 0])),
   };
+  stats[BAG_STATUS.RECEIVED] += stats[BAG_STATUS.EXCEPTION];
   return { bags: rows, total, page, pageSize, stats, branches };
 }
 
@@ -680,7 +801,7 @@ export async function bagDetails(db, user, code) {
   const [packages, exceptions] = await Promise.all([
     db
       .collection("packages")
-      .find({ tracking: { $in: trackings } }, { projection: { _id: 0, tracking: 1, sender: 1, receiver: 1, to: 1, from: 1, route: 1, weight: 1, status: 1, events: 1, history: 1, exception: 1, bag: 1, branch: 1 } })
+      .find({ tracking: { $in: trackings } }, { projection: { _id: 0, tracking: 1, sender: 1, receiver: 1, to: 1, from: 1, route: 1, weight: 1, status: 1, events: 1, history: 1, exception: 1, bag: 1, branch: 1, "items.description": 1, "items.qty": 1, "photos.url": 1 } })
       .toArray(),
     db.collection("bag_exceptions").find({ bagCode: bag.code }).sort({ createdAt: 1 }).toArray(),
   ]);
@@ -699,83 +820,24 @@ export async function bagDetails(db, user, code) {
   };
 }
 
-export async function bagReport(db, user, params) {
-  const scope = bagScope(user);
-  const range = dayRange(params.get("from"), params.get("to"));
-  const bags = db.collection("bags");
-  const now = Date.now();
-  const delayedBefore = new Date(now - DELAY_DAYS * 86400000);
-
-  const [dispatched, received, inTransit, delayed, durations, exceptionCounts, openExceptions] = await Promise.all([
-    bags
-      .aggregate([
-        { $match: { ...scope, dispatchedAt: range ?? { $ne: null } } },
-        { $group: { _id: "$origin.code", name: { $first: "$origin.name" }, bags: { $sum: 1 }, packages: { $sum: "$totalPackages" }, weight: { $sum: "$totalWeight" } } },
-        { $sort: { bags: -1 } },
-      ])
-      .toArray(),
-    bags
-      .aggregate([
-        { $match: { ...scope, receivedAt: range ?? { $ne: null } } },
-        {
-          $group: {
-            _id: "$destination.code",
-            name: { $first: "$destination.name" },
-            bags: { $sum: 1 },
-            packages: { $sum: "$receipt.received" },
-            missing: { $sum: "$receipt.missing" },
-            damaged: { $sum: "$receipt.damaged" },
-          },
-        },
-        { $sort: { bags: -1 } },
-      ])
-      .toArray(),
-    bags.countDocuments({ ...scope, status: BAG_STATUS.IN_TRANSIT }),
-    bags
-      .find({ ...scope, status: BAG_STATUS.IN_TRANSIT, dispatchedAt: { $lt: delayedBefore } }, { projection: { code: 1, origin: 1, destination: 1, dispatchedAt: 1, totalPackages: 1 } })
-      .sort({ dispatchedAt: 1 })
-      .limit(50)
-      .toArray(),
-    bags
-      .aggregate([
-        { $match: { ...scope, receivedAt: range ?? { $ne: null }, dispatchedAt: { $ne: null } } },
-        {
-          $group: {
-            _id: null,
-            hours: { $avg: { $divide: [{ $subtract: ["$receivedAt", "$dispatchedAt"] }, 3600000] } },
-            packages: { $avg: "$totalPackages" },
-            count: { $sum: 1 },
-          },
-        },
-      ])
-      .toArray(),
-    db
-      .collection("bag_exceptions")
-      .aggregate([
-        { $match: { ...exceptionScope(user), ...(range && { createdAt: range }) } },
-        { $group: { _id: { type: "$type", status: "$status" }, count: { $sum: 1 } } },
-      ])
-      .toArray(),
-    db.collection("bag_exceptions").find({ ...exceptionScope(user), status: "open" }).sort({ createdAt: 1 }).limit(100).toArray(),
-  ]);
-
-  const count = (type, status) =>
-    exceptionCounts.filter((row) => row._id.type === type && (!status || row._id.status === status)).reduce((sum, row) => sum + row.count, 0);
-  return {
-    dispatched,
-    received,
-    inTransit,
-    delayed,
-    delayDays: DELAY_DAYS,
-    averageHours: durations[0]?.hours ?? null,
-    averagePackages: durations[0]?.packages ?? null,
-    exceptions: {
-      missing: count("missing"),
-      damaged: count("damaged"),
-      open: count("missing", "open") + count("damaged", "open"),
-      list: openExceptions,
-    },
-  };
+// Missing and damaged packages still waiting for a decision, oldest first, with what managers
+// need to recognise each package (name, photo, sender and receiver).
+export async function openExceptions(db, user) {
+  const exceptions = await db
+    .collection("bag_exceptions")
+    .find({ ...exceptionScope(user), status: "open" })
+    .sort({ createdAt: 1 })
+    .limit(200)
+    .toArray();
+  const packages = await db
+    .collection("packages")
+    .find(
+      { tracking: { $in: exceptions.map((item) => item.tracking) } },
+      { projection: { _id: 0, tracking: 1, sender: 1, receiver: 1, route: 1, from: 1, to: 1, "items.description": 1, "items.qty": 1, "photos.url": 1, charge: 1, amountPaid: 1, currency: 1, events: 1 } },
+    )
+    .toArray();
+  const byTracking = new Map(packages.map((pkg) => [pkg.tracking, pkg]));
+  return exceptions.map((item) => ({ ...item, package: byTracking.get(item.tracking) ?? null }));
 }
 
 function exceptionScope(user) {

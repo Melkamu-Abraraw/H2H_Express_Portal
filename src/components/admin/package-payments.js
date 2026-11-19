@@ -10,7 +10,9 @@ export function currencyOf(pkg) {
 // The same two methods the registration form offers.
 export const PAYMENT_METHODS = ["Cash", "Transfer"];
 
+// A lost or damaged package owes nothing: the unpaid part is cancelled when its case is closed.
 export function balanceDue(pkg) {
+  if (["Lost", "Damaged"].includes(pkg.status) || ["lost", "damaged"].includes(pkg.events?.at(-1)?.step)) return 0;
   return Math.max(0, Math.round((pkg.charge - pkg.amountPaid) * 100) / 100);
 }
 

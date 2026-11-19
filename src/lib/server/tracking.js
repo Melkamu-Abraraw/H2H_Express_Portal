@@ -14,7 +14,15 @@ const PUBLIC_FIELDS = {
   weight: 1,
   charge: 1,
   amountPaid: 1,
+  // Only to decide whether to show the package at all (see below); never sent to the page.
+  exception: 1,
 };
+
+// Lost or damaged packages, and packages with an open missing/damaged case, aren't shown to the
+// public: staff contact the customer instead.
+function hiddenFromPublic(pkg) {
+  return Boolean(pkg.exception) || ["lost", "damaged"].includes(pkg.events?.at(-1)?.step);
+}
 
 export async function findPublicTracking(number) {
   const tracking = String(number).trim().toUpperCase();
@@ -26,5 +34,5 @@ export async function findPublicTracking(number) {
 
   const db = await getDb();
   const pkg = await db.collection("packages").findOne({ tracking }, { projection: PUBLIC_FIELDS });
-  return pkg ? toPublicTracking(pkg) : null;
+  return pkg && !hiddenFromPublic(pkg) ? toPublicTracking(pkg) : null;
 }

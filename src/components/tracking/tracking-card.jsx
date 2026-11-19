@@ -156,6 +156,8 @@ function History({ steps, current, delivered }) {
 
 export function TrackingCard({ info }) {
   const StageIcon = STEP_ICONS[info.steps[info.current].key] ?? Package;
+  // Green when delivered, brand yellow while on the way.
+  const tone = info.delivered ? "text-status-good" : "text-brand-dark dark:text-brand";
 
   return (
     // Side by side on wide screens so nothing important needs scrolling; stacked on phones.
@@ -163,11 +165,7 @@ export function TrackingCard({ info }) {
       <article className="overflow-hidden rounded-lg border bg-card text-card-foreground shadow-xs">
         <div className="grid gap-5 p-5 sm:p-6">
           <header className="grid gap-1">
-            <span
-              className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
-                info.delivered ? "text-status-good" : "text-brand-dark dark:text-brand"
-              }`}
-            >
+            <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${tone}`}>
               {info.delivered ? (
                 <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />
               ) : (
@@ -188,12 +186,7 @@ export function TrackingCard({ info }) {
           </div>
 
           <div className="flex items-start gap-3.5 rounded-lg bg-muted/50 p-4">
-            <span
-              className={`grid shrink-0 place-items-center pt-0.5 ${
-                info.delivered ? "text-status-good" : "text-brand-dark dark:text-brand"
-              }`}
-              aria-hidden="true"
-            >
+            <span className={`grid shrink-0 place-items-center pt-0.5 ${tone}`} aria-hidden="true">
               <StageIcon className="size-4.5" />
             </span>
             <div className="min-w-0">

@@ -1,9 +1,9 @@
 import { parseHandling } from "@/lib/handling";
 import { requestScope, requireAccess } from "@/lib/server/auth";
-import { isOwnPhoto } from "@/lib/server/cloudinary";
 import { emailConfigured, sendPackageConfirmation } from "@/lib/server/email";
 import { getDb, nextSequence } from "@/lib/server/mongodb";
 import { getExchangeRates } from "@/lib/server/exchange";
+import { isStoredPhoto } from "@/lib/server/r2";
 import { announcePackage } from "@/lib/server/telegram";
 
 const FIRST_RECEIPT = 1000;
@@ -57,7 +57,8 @@ function parsePackage(body) {
   });
 
   const photos = Array.isArray(body.photos) ? body.photos.slice(0, 20) : [];
-  if (!photos.every(isOwnPhoto)) throw new InvalidRequest("A photo wasn't uploaded correctly");
+  // Only photos this app stored in R2 as package photos.
+  if (!photos.every((photo) => isStoredPhoto(photo, "package"))) throw new InvalidRequest("A photo wasn't uploaded correctly");
 
   const charge = amount(body.payment?.charge, "Amount to pay");
   // Never record more than was charged.
@@ -83,9 +84,9 @@ function parsePackage(body) {
     weight: Math.round(parsedItems.reduce((sum, item) => sum + item.kg, 0) * 100) / 100,
     notes: text(body.notes, "Notes", { required: false, max: 2000 }),
     ...handlingFields(body.handling),
-    photos: photos.map(({ url, publicId, width, height }) => ({
+    photos: photos.map(({ url, key, width, height }) => ({
       url,
-      publicId,
+      key,
       width: Number(width) || null,
       height: Number(height) || null,
     })),

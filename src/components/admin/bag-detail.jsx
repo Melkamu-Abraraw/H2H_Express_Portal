@@ -183,7 +183,7 @@ function BagPackagesTable({ bag, onRemove, busy = false }) {
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm font-medium">
-        Packages in this bag{" "}
+        Packages in this box{" "}
         <span className="font-normal text-muted-foreground">
           · {plural(bag.items.length, "package")} · {kg(bagWeight(bag.items))}
         </span>
@@ -236,7 +236,7 @@ function BagPackagesTable({ bag, onRemove, busy = false }) {
                         size="sm"
                         className="text-status-bad hover:text-status-bad"
                         disabled={busy}
-                        aria-label={`Remove ${item.tracking} from the bag`}
+                        aria-label={`Remove ${item.tracking} from the box`}
                         onClick={() => onRemove(item.tracking)}
                       >
                         <X aria-hidden="true" />
@@ -250,7 +250,7 @@ function BagPackagesTable({ bag, onRemove, busy = false }) {
             {!bag.items.length && (
               <TableRow>
                 <TableCell colSpan={columns} className="h-20 text-center text-muted-foreground">
-                  {onRemove ? "Nothing in this bag yet. Tick packages above and click Add." : "This bag is empty."}
+                  {onRemove ? "Nothing in this box yet. Tick packages above and click Add." : "This box is empty."}
                 </TableCell>
               </TableRow>
             )}
@@ -289,7 +289,7 @@ function AddPackagesPanel({ bag, onChanged }) {
     setBusy(true);
     try {
       await bagRequest(`/api/bags/${bag.code}/packages?tracking=${encodeURIComponent(tracking)}`, { method: "DELETE" });
-      setResult({ text: `Removed ${tracking} from the bag.`, tone: "good" });
+      setResult({ text: `Removed ${tracking} from the box.`, tone: "good" });
       setVersion((value) => value + 1);
       await onChanged();
     } catch (error) {
@@ -409,7 +409,7 @@ function AddPackagesPanel({ bag, onChanged }) {
                         ? `Couldn't load packages: ${eligible.message}`
                         : term
                           ? "No eligible packages match."
-                          : "No packages are waiting for this bag."}
+                          : "No packages are waiting for this box."}
                   </TableCell>
                 </TableRow>
               )}
@@ -457,9 +457,9 @@ function ReceivePanel({ bag, onReceived }) {
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
-        <CardTitle>Receive this bag</CardTitle>
+        <CardTitle>Receive this box</CardTitle>
         <Button disabled={unchecked > 0} onClick={() => setConfirming(true)}>
-          Receive bag
+          Receive box
         </Button>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -575,7 +575,7 @@ function ReceivePanel({ bag, onReceived }) {
                   </span>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground">A manager will follow up after you receive the bag.</p>
+              <p className="text-sm text-muted-foreground">A manager will follow up after you receive the box.</p>
             </div>
           </div>
         )}
@@ -584,7 +584,7 @@ function ReceivePanel({ bag, onReceived }) {
         open={confirming}
         onOpenChange={setConfirming}
         title={`Receive ${bag.code}?`}
-        description={`Receiving the bag at ${branchShort(bag.destination)} now. It can't be undone.`}
+        description={`Receiving the box at ${branchShort(bag.destination)} now. It can't be undone.`}
         confirmLabel="Receive"
         onConfirm={async () => {
           const verifications = Object.fromEntries(
@@ -684,16 +684,16 @@ export function BagDetail({ code }) {
         {load.state === "error" ? (
           <div className="flex flex-col items-center gap-3">
             <p className={load.status === 404 ? "text-muted-foreground" : "text-status-bad"}>
-              {load.status === 404 ? `Bag ${code} wasn't found, or it isn't one your branch handles.` : `Couldn't load the bag: ${load.message}`}
+              {load.status === 404 ? `Box ${code} wasn't found, or it isn't one your branch handles.` : `Couldn't load the box: ${load.message}`}
             </p>
             <Button asChild variant="outline">
-              <Link href="/admin/bags">Back to bags</Link>
+              <Link href="/admin/bags">Back to boxes</Link>
             </Button>
           </div>
         ) : (
           <span className="inline-flex items-center gap-2 text-muted-foreground">
             <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-            Loading bag…
+            Loading box…
           </span>
         )}
       </div>
@@ -739,7 +739,7 @@ export function BagDetail({ code }) {
       <div className="flex flex-col gap-3">
         <Link href="/admin/bags" className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="size-4" aria-hidden="true" />
-          All bags
+          All boxes
         </Link>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="font-mono text-2xl font-semibold tracking-tight">{bag.code}</h1>
@@ -749,13 +749,13 @@ export function BagDetail({ code }) {
           {allowed.fill && (
             <Button onClick={() => setDialog("close")} disabled={!bag.items.length}>
               <Lock aria-hidden="true" />
-              Close bag
+              Close box
             </Button>
           )}
           {allowed.dispatch && (
             <Button onClick={() => { setForm({ notes: "", reason: "" }); setDialog("dispatch"); }}>
               <Send aria-hidden="true" />
-              Dispatch bag
+              Dispatch box
             </Button>
           )}
           {allowed.reopen && (
@@ -771,7 +771,7 @@ export function BagDetail({ code }) {
           {allowed.cancel && (
             <Button variant="ghost" className="text-status-bad" onClick={() => { setForm((current) => ({ ...current, reason: "" })); setDialog("cancel"); }}>
               <X aria-hidden="true" />
-              {empty ? "Delete bag" : "Cancel bag"}
+              {empty ? "Delete box" : "Cancel box"}
             </Button>
           )}
         </div>
@@ -782,12 +782,12 @@ export function BagDetail({ code }) {
         <Alert>
           <Send aria-hidden="true" />
           <AlertTitle>On its way to {branchShort(bag.destination)}</AlertTitle>
-          <AlertDescription>Only the destination branch can receive this bag.</AlertDescription>
+          <AlertDescription>Only the destination branch can receive this box.</AlertDescription>
         </Alert>
       )}
       <Card>
         <CardHeader>
-          <CardTitle>Bag information</CardTitle>
+          <CardTitle>Box information</CardTitle>
         </CardHeader>
         <CardContent>
           <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -832,7 +832,7 @@ export function BagDetail({ code }) {
           onReceived={async ({ status: next }) => {
             await reload();
             setNotice({
-              text: next === BAG_STATUS.EXCEPTION ? "Bag received. Exceptions were recorded for the bag." : "Bag received. Every package is ready for pickup.",
+              text: next === BAG_STATUS.EXCEPTION ? "Box received. Exceptions were recorded for the box." : "Box received. Every package is ready for pickup.",
               tone: next === BAG_STATUS.EXCEPTION ? "warn" : "good",
             });
           }}
@@ -842,8 +842,8 @@ export function BagDetail({ code }) {
       <ConfirmDialog
         open={dialog === "close"}
         onOpenChange={closeDialog}
-        title={<>Close bag <span className="font-mono">{bag.code}</span>?</>}
-        description="The bag will be ready for dispatch."
+        title={<>Close box <span className="font-mono">{bag.code}</span>?</>}
+        description="The box will be ready for dispatch."
         confirmLabel={`Close with ${plural(bag.items.length, "package")}`}
         onConfirm={() => act("close", {})}
       >
@@ -853,13 +853,13 @@ export function BagDetail({ code }) {
       <ConfirmDialog
         open={dialog === "dispatch"}
         onOpenChange={closeDialog}
-        title="Dispatch this bag?"
+        title="Dispatch this box?"
         description={`Every package inside moves to In transit now, recorded under your name.`}
         confirmLabel="Dispatch"
-        onConfirm={() => act("dispatch", { notes: form.notes }, `Bag dispatched. ${plural(bag.items.length, "package")} now in transit.`)}
+        onConfirm={() => act("dispatch", { notes: form.notes }, `Box dispatched. ${plural(bag.items.length, "package")} now in transit.`)}
       >
         <dl className="grid grid-cols-2 gap-3 rounded-md border bg-muted/40 p-3">
-          <Field label="Bag">{bag.code}</Field>
+          <Field label="Box">{bag.code}</Field>
           <Field label="Packages">{plural(bag.items.length, "package")} · {kg(bagWeight(bag.items))}</Field>
           <Field label="From">{branchShort(bag.origin)}</Field>
           <Field label="To">{branchShort(bag.destination)}</Field>
@@ -875,11 +875,11 @@ export function BagDetail({ code }) {
       <ConfirmDialog
         open={dialog === "reopen"}
         onOpenChange={closeDialog}
-        title="Reopen this bag?"
-        description="Staff at the origin can add and remove packages again. The reason is kept in the bag's history."
+        title="Reopen this box?"
+        description="Staff at the origin can add and remove packages again. The reason is kept in the box's history."
         confirmLabel="Reopen"
         disabled={!form.reason.trim()}
-        onConfirm={() => act("reopen", { reason: form.reason }, "Bag reopened.")}
+        onConfirm={() => act("reopen", { reason: form.reason }, "Box reopened.")}
       >
         <div className="grid gap-2">
           <Label htmlFor="reopen-reason">Reason</Label>
@@ -890,13 +890,13 @@ export function BagDetail({ code }) {
       <ConfirmDialog
         open={dialog === "cancel"}
         onOpenChange={closeDialog}
-        title={empty ? "Delete this empty bag?" : "Cancel this bag?"}
+        title={empty ? "Delete this empty box?" : "Cancel this box?"}
         description={
           empty
             ? `${bag.code} has never held a package, so it is removed completely and leaves no history.`
-            : "Its packages are released and can go into another bag. The bag keeps its history."
+            : "Its packages are released and can go into another box. The box keeps its history."
         }
-        confirmLabel={empty ? "Delete bag" : "Cancel bag"}
+        confirmLabel={empty ? "Delete box" : "Cancel box"}
         destructive
         disabled={!empty && !form.reason.trim()}
         onConfirm={async () => {
@@ -905,7 +905,7 @@ export function BagDetail({ code }) {
             router.replace("/admin/bags");
             return;
           }
-          await act("cancel", { reason: form.reason }, "Bag cancelled. Its packages were released.");
+          await act("cancel", { reason: form.reason }, "Box cancelled. Its packages were released.");
         }}
       >
         {!empty && (

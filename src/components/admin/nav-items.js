@@ -30,12 +30,12 @@ export const mainNav = [
     ],
   },
   {
-    label: "Bags",
+    label: "Boxes",
     href: "/admin/bags",
     icon: ShoppingBag,
     permission: "bags.view",
     children: [
-      { label: "All bags", href: "/admin/bags" },
+      { label: "All boxes", href: "/admin/bags" },
       { label: "Incoming", href: "/admin/bags/incoming" },
       { label: "Package issues", href: "/admin/bags/reports", permission: "bags.reports" },
     ],

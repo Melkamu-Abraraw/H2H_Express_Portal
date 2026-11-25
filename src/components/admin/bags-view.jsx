@@ -40,7 +40,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 
 const STAT_CARDS = [
-  { key: "total", label: "Total bags", status: null, dot: "bg-muted-foreground", detail: "Every bag you can see" },
+  { key: "total", label: "Total boxes", status: null, dot: "bg-muted-foreground", detail: "Every box you can see" },
   { key: BAG_STATUS.OPEN, label: "Open", status: BAG_STATUS.OPEN, detail: "Being filled" },
   { key: BAG_STATUS.READY_FOR_DISPATCH, label: "Ready for dispatch", status: BAG_STATUS.READY_FOR_DISPATCH, detail: "Closed, waiting to leave" },
   { key: BAG_STATUS.IN_TRANSIT, label: "In transit", status: BAG_STATUS.IN_TRANSIT, detail: "On the way" },
@@ -63,7 +63,7 @@ const DATE_FIELDS = [
 ];
 
 const COLUMNS = [
-  { key: "code", label: "Bag" },
+  { key: "code", label: "Box" },
   { key: "origin", label: "Origin" },
   { key: "destination", label: "Destination" },
   { key: "packages", label: "Packages", align: "right" },
@@ -136,7 +136,7 @@ function CreateBagDialog({ open, onOpenChange, branches, profile }) {
       <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
           <DialogHeader>
-            <DialogTitle>Create a bag</DialogTitle>
+            <DialogTitle>Create a box</DialogTitle>
           </DialogHeader>
           <div className="grid flex-1 content-start gap-4 overflow-y-auto border-y p-4">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -159,7 +159,7 @@ function CreateBagDialog({ open, onOpenChange, branches, profile }) {
                   </Select>
                 )}
                 {own && !from && (
-                  <p className="text-xs text-status-bad">Your branch isn&apos;t on any route, so it can&apos;t send bags.</p>
+                  <p className="text-xs text-status-bad">Your branch isn&apos;t on any route, so it can&apos;t send boxes.</p>
                 )}
               </div>
               <div className="grid min-w-0 content-start gap-2">
@@ -189,7 +189,7 @@ function CreateBagDialog({ open, onOpenChange, branches, profile }) {
               Cancel
             </Button>
             <Button type="submit" disabled={state.busy || !originCode || !destination}>
-              {state.busy ? "Creating…" : "Create bag"}
+              {state.busy ? "Creating…" : "Create box"}
             </Button>
           </DialogFooter>
         </form>
@@ -281,11 +281,11 @@ export function BagsView() {
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Bags</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Boxes</h1>
         {can(profile, "bags.create") && (
           <Button onClick={() => setCreating(true)}>
             <Plus aria-hidden="true" />
-            Create bag
+            Create box
           </Button>
         )}
       </div>
@@ -323,8 +323,8 @@ export function BagsView() {
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
             <Input
               type="search"
-              aria-label="Search by bag reference"
-              placeholder="Search bag reference..."
+              aria-label="Search by box reference"
+              placeholder="Search box reference..."
               className="pl-8 font-mono"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -343,7 +343,7 @@ export function BagsView() {
             </Button>
           )}
           <p role="status" className="text-sm text-muted-foreground sm:ml-auto">
-            <span className="font-mono">{data?.total ?? 0}</span> {data?.total === 1 ? "bag" : "bags"}
+            <span className="font-mono">{data?.total ?? 0}</span> {data?.total === 1 ? "box" : "boxes"}
           </p>
         </CardHeader>
         <CardContent className="px-0">
@@ -379,7 +379,7 @@ export function BagsView() {
                     <TableCell className="whitespace-nowrap">{bag.dispatchedAt ? when(bag.dispatchedAt, "MMM d, HH:mm") : <span className="text-muted-foreground">—</span>}</TableCell>
                     <TableCell className="pr-4 text-right">
                       {nextAction(bag, profile) === "View" ? (
-                        <Button asChild size="icon-sm" variant="ghost" title="View bag">
+                        <Button asChild size="icon-sm" variant="ghost" title="View box">
                           <Link href={bagUrl(bag.code)} aria-label={`View ${bag.code}`}>
                             <Eye aria-hidden="true" />
                           </Link>
@@ -398,14 +398,14 @@ export function BagsView() {
                       {load.state === "loading" ? (
                         <span className="inline-flex items-center gap-2">
                           <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-                          Loading bags…
+                          Loading boxes…
                         </span>
                       ) : load.state === "error" ? (
-                        `Couldn't load bags: ${load.message}`
+                        `Couldn't load boxes: ${load.message}`
                       ) : filtered ? (
-                        "No bags match your filters."
+                        "No boxes match your filters."
                       ) : (
-                        "No bags yet. Create one to start grouping packages for transport."
+                        "No boxes yet. Create one to start grouping packages for transport."
                       )}
                     </TableCell>
                   </TableRow>

@@ -1,8 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { v2 as cloudinary } from "cloudinary";
 import { DIRECTIONS } from "@/components/admin/shipping-routes";
-import { cloudinaryConfig, PACKAGE_PHOTO_FOLDER } from "@/lib/server/cloudinary";
 import { nextSequence } from "@/lib/server/mongodb";
+import { uploadPhoto as storePhoto } from "@/lib/server/r2";
 
 // Requests from the public /ship page wait here until staff have inspected the package,
 // corrected anything (usually the weight) and registered it. Nothing reaches the business flow
@@ -139,15 +138,15 @@ function checkPass(pass) {
   if (!valid) throw new Rejected("Security check expired. Please tick the box again.", 403);
 }
 
+// The ship form sends one photo, already shrunk to a JPEG in the browser. It's stored in R2 with
+// the package photos, so it carries over when staff register the request.
 async function uploadPhoto(base64) {
   if (typeof base64 !== "string" || !base64 || base64.length > MAX_PHOTO_CHARS) return [];
   try {
-    cloudinary.config(cloudinaryConfig());
-    const result = await cloudinary.uploader.upload(`data:image/jpeg;base64,${base64}`, {
-      folder: PACKAGE_PHOTO_FOLDER,
-      resource_type: "image",
-    });
-    return [{ url: result.secure_url, publicId: result.public_id, width: result.width, height: result.height }];
+    const bytes = Buffer.from(base64, "base64");
+    // Anyone can send this form, so keep only what really is a JPEG (it starts FF D8 FF).
+    if (bytes.length < 3 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return [];
+    return [await storePhoto("package", bytes, "image/jpeg")];
   } catch (error) {
     // A missing photo shouldn't lose the whole request.
     console.error("Request photo upload failed", error);

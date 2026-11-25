@@ -1,7 +1,7 @@
 import { BagsView } from "@/components/admin/bags-view";
 
 export const metadata = {
-  title: "Bags | H2H Express",
+  title: "Boxes | H2H Express",
 };
 
 export default function BagsPage() {

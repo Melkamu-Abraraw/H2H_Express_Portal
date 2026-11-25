@@ -473,7 +473,7 @@ function Photos({ photos }) {
     <div className={`grid gap-1 ${photos.length > 1 ? "grid-cols-2" : ""}`}>
       {photos.map((photo) => (
         <a key={photo.url} href={photo.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg">
-          {/* Cloudinary already serves these sized; next/image would need the host configured. */}
+          {/* Served from R2 through /api/photos, already shrunk at upload. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={photo.url}
@@ -1221,7 +1221,7 @@ export function ChatView() {
 
   async function deliver(conversationId, pending) {
     try {
-      // Photos go to Cloudinary first (once, even if sending is retried).
+      // Photos are uploaded first (once, even if sending is retried).
       const uploaded = pending.uploaded ?? (pending.files?.length ? await uploadPhotos(pending.files, "chat") : []);
       pending.uploaded = uploaded;
       const saved = await sendChatMessage(conversationId, pending.text, uploaded, pending.replyTo?.id);

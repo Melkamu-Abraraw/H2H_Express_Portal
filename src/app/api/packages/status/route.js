@@ -25,7 +25,7 @@ export async function POST(request) {
   }
   if (step !== "delivered") {
     return Response.json(
-      { success: false, error: "Packages move to In transit and Ready for pickup with their bag." },
+      { success: false, error: "Packages move to In transit and Ready for pickup with their box." },
       { status: 400 },
     );
   }

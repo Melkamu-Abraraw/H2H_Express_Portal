@@ -47,7 +47,7 @@ async function handleButton(query) {
     if (!step) return answerCallback(query.id);
     const { moved, unpaid, skipped, inBag } = await moveToStep(db, [tracking], step.key, `${personName(query.from)} (Telegram)`);
     if (moved.length) toast = `${step.label} ✓`;
-    else if (inBag.length) toast = "It's inside a bag; it moves when the bag is dispatched or received.";
+    else if (inBag.length) toast = "It's inside a box; it moves when the box is dispatched or received.";
     else if (unpaid.length) toast = "Balance still due, so it can't be marked Delivered yet.";
     else if (skipped.length) toast = "Already at or past that step.";
   }
@@ -109,7 +109,7 @@ async function handleReply(message) {
       await getExchangeRates(db).catch(() => null),
     );
     await reply(`✅ <b>${escapeHtml(pkg.tracking)}</b> → ${step.label} (by ${escapeHtml(by)})`);
-  } else if (inBag.length) await reply(`ℹ️ ${escapeHtml(pkg.tracking)} is inside bag ${escapeHtml(pkg.bag?.code ?? "")}; it moves when the bag is dispatched or received.`);
+  } else if (inBag.length) await reply(`ℹ️ ${escapeHtml(pkg.tracking)} is inside box ${escapeHtml(pkg.bag?.code ?? "")}; it moves when the box is dispatched or received.`);
   else if (unpaid.length) await reply(`⚠️ ${escapeHtml(pkg.tracking)} still has a balance to pay, so it can't be marked Delivered yet.`);
   else if (skipped.length) await reply(`ℹ️ ${escapeHtml(pkg.tracking)} is already at or past "${step.label}".`);
 }

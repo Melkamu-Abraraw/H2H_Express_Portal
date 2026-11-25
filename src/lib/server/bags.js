@@ -122,24 +122,24 @@ function historyEntry(type, bag, user, at, extra = {}) {
 
 async function loadBag(db, code, session) {
   const bag = await db.collection("bags").findOne({ code }, { session });
-  if (!bag) throw new BagError("Bag not found", 404);
+  if (!bag) throw new BagError("Box not found", 404);
   return bag;
 }
 
 function requireStatus(bag, action) {
   if (!BAG_TRANSITIONS[action].from.includes(bag.status)) {
     const messages = {
-      close: "Only an open bag can be closed.",
-      reopen: "Only a bag that is ready for dispatch can be reopened.",
-      cancel: "Only a bag that hasn't left yet can be cancelled.",
+      close: "Only an open box can be closed.",
+      reopen: "Only a box that is ready for dispatch can be reopened.",
+      cancel: "Only a box that hasn't left yet can be cancelled.",
       dispatch: bag.status === BAG_STATUS.IN_TRANSIT || bag.status === BAG_STATUS.RECEIVED
-        ? "This bag has already been dispatched."
-        : "Close the bag before dispatching it.",
+        ? "This box has already been dispatched."
+        : "Close the box before dispatching it.",
       receive: bag.status === BAG_STATUS.RECEIVED || bag.status === BAG_STATUS.EXCEPTION
-        ? "This bag has already been received."
-        : "This bag hasn't been dispatched yet.",
+        ? "This box has already been received."
+        : "This box hasn't been dispatched yet.",
     };
-    throw new BagError(messages[action] ?? "That isn't allowed for this bag now.", 409);
+    throw new BagError(messages[action] ?? "That isn't allowed for this box now.", 409);
   }
 }
 
@@ -150,7 +150,7 @@ async function moveBag(db, session, bag, action, to, set, event) {
     { $set: { status: to, updatedAt: event.at, ...set }, $push: { events: event } },
     { session },
   );
-  if (!matchedCount) throw new BagError("Someone else changed this bag. Reload and try again.", 409);
+  if (!matchedCount) throw new BagError("Someone else changed this box. Reload and try again.", 409);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -165,7 +165,7 @@ export async function createBag(db, user, body) {
   if (!destination) throw new BagError("Choose the destination branch.", 400);
   if (destination.code === origin.code) throw new BagError("The destination must be another branch.", 400);
   if (destination.countryCode === origin.countryCode) {
-    throw new BagError("Bags travel between countries. Choose a branch in another country.", 400);
+    throw new BagError("Boxes travel between countries. Choose a branch in another country.", 400);
   }
 
   const now = new Date();
@@ -202,7 +202,7 @@ function eligibleFilter(bag) {
 
 export async function eligiblePackages(db, user, code, search) {
   const bag = await loadBag(db, code);
-  if (!visible(user, bag)) throw new BagError("Bag not found", 404);
+  if (!visible(user, bag)) throw new BagError("Box not found", 404);
   const term = text(search, 60);
   const filter = eligibleFilter(bag);
   if (term) {
@@ -226,8 +226,8 @@ export async function eligiblePackages(db, user, code, search) {
 // Why a package can't go into this bag, in words for the desk.
 function rejection(bag, pkg) {
   if (!pkg) return "Not found";
-  if (bag.items.some((item) => item.tracking === pkg.tracking)) return "Already in this bag";
-  if (pkg.bag?.code) return `Already in bag ${pkg.bag.code}`;
+  if (bag.items.some((item) => item.tracking === pkg.tracking)) return "Already in this box";
+  if (pkg.bag?.code) return `Already in box ${pkg.bag.code}`;
   if (pkg.branch?.code !== bag.origin.code) return `Registered at another branch (${pkg.branch?.name ?? "unknown"})`;
   if (pkg.to !== bag.destination.country) return `Going to ${pkg.to}, not ${bag.destination.country}`;
   if (pkg.events?.at(-1)?.step !== "received") return `Already ${String(pkg.status).toLowerCase()}`;
@@ -240,8 +240,8 @@ export async function addPackages(db, user, code, trackings) {
 
   const result = await inTransaction(db, async (session) => {
     const bag = await loadBag(db, code, session);
-    if (!visible(user, bag) || !atOrigin(user, bag)) throw new BagError("Only the origin branch can fill this bag.", 403);
-    if (bag.status !== BAG_STATUS.OPEN) throw new BagError("This bag is closed. Reopen it to change its packages.", 409);
+    if (!visible(user, bag) || !atOrigin(user, bag)) throw new BagError("Only the origin branch can fill this box.", 403);
+    if (bag.status !== BAG_STATUS.OPEN) throw new BagError("This box is closed. Reopen it to change its packages.", 409);
 
     const packages = db.collection("packages");
     const found = await packages
@@ -269,7 +269,7 @@ export async function addPackages(db, user, code, trackings) {
         { session },
       );
       if (!modifiedCount) {
-        rejected.push({ tracking, reason: "Taken by another bag just now" });
+        rejected.push({ tracking, reason: "Taken by another box just now" });
         continue;
       }
       added.push({
@@ -294,7 +294,7 @@ export async function addPackages(db, user, code, trackings) {
         },
         { session },
       );
-      if (!matchedCount) throw new BagError("This bag was closed while you were adding packages.", 409);
+      if (!matchedCount) throw new BagError("This box was closed while you were adding packages.", 409);
     }
     return { added, rejected };
   });
@@ -305,9 +305,9 @@ export async function removePackage(db, user, code, tracking) {
   const value = text(tracking, 40).toUpperCase();
   return inTransaction(db, async (session) => {
     const bag = await loadBag(db, code, session);
-    if (!visible(user, bag) || !atOrigin(user, bag)) throw new BagError("Only the origin branch can change this bag.", 403);
-    if (bag.status !== BAG_STATUS.OPEN) throw new BagError("This bag is closed. Reopen it to change its packages.", 409);
-    if (!bag.items.some((item) => item.tracking === value)) throw new BagError("That package isn't in this bag.", 404);
+    if (!visible(user, bag) || !atOrigin(user, bag)) throw new BagError("Only the origin branch can change this box.", 403);
+    if (bag.status !== BAG_STATUS.OPEN) throw new BagError("This box is closed. Reopen it to change its packages.", 409);
+    if (!bag.items.some((item) => item.tracking === value)) throw new BagError("That package isn't in this box.", 404);
 
     const now = new Date();
     const items = bag.items.filter((item) => item.tracking !== value);
@@ -332,9 +332,9 @@ export async function removePackage(db, user, code, tracking) {
 export async function closeBag(db, user, code) {
   return inTransaction(db, async (session) => {
     const bag = await loadBag(db, code, session);
-    if (!visible(user, bag) || !atOrigin(user, bag)) throw new BagError("Only the origin branch can close this bag.", 403);
+    if (!visible(user, bag) || !atOrigin(user, bag)) throw new BagError("Only the origin branch can close this box.", 403);
     requireStatus(bag, "close");
-    if (!bag.items.length) throw new BagError("Add at least one package before closing the bag.");
+    if (!bag.items.length) throw new BagError("Add at least one package before closing the box.");
     const now = new Date();
     const to = BAG_TRANSITIONS.close.to;
     await moveBag(db, session, bag, "close", to, { closedBy: actor(user), closedAt: now }, bagEvent("closed", bag, user, { to, at: now }));
@@ -344,10 +344,10 @@ export async function closeBag(db, user, code) {
 
 export async function reopenBag(db, user, code, reason) {
   const notes = text(reason, 500);
-  if (!notes) throw new BagError("Say why the bag is being reopened.");
+  if (!notes) throw new BagError("Say why the box is being reopened.");
   return inTransaction(db, async (session) => {
     const bag = await loadBag(db, code, session);
-    if (!visible(user, bag)) throw new BagError("Bag not found", 404);
+    if (!visible(user, bag)) throw new BagError("Box not found", 404);
     requireStatus(bag, "reopen");
     const now = new Date();
     const to = BAG_TRANSITIONS.reopen.to;
@@ -365,17 +365,17 @@ export async function cancelBag(db, user, code, reason) {
   const notes = text(reason, 500);
   return inTransaction(db, async (session) => {
     const bag = await loadBag(db, code, session);
-    if (!visible(user, bag) || !atOrigin(user, bag)) throw new BagError("Only the origin branch can cancel this bag.", 403);
+    if (!visible(user, bag) || !atOrigin(user, bag)) throw new BagError("Only the origin branch can cancel this box.", 403);
     requireStatus(bag, "cancel");
     if (neverFilled(bag)) {
       const { deletedCount } = await db.collection("bags").deleteOne(
         { _id: bag._id, status: bag.status, items: { $size: 0 } },
         { session },
       );
-      if (!deletedCount) throw new BagError("Someone else changed this bag. Reload and try again.", 409);
+      if (!deletedCount) throw new BagError("Someone else changed this box. Reload and try again.", 409);
       return { deleted: true };
     }
-    if (!notes) throw new BagError("Say why the bag is being cancelled.");
+    if (!notes) throw new BagError("Say why the box is being cancelled.");
     const now = new Date();
     const to = BAG_TRANSITIONS.cancel.to;
     await moveBag(db, session, bag, "cancel", to, { cancelledBy: actor(user), cancelledAt: now, cancelReason: notes }, bagEvent("cancelled", bag, user, { to, at: now, notes }));
@@ -399,7 +399,7 @@ export async function dispatchBag(db, user, code, body) {
   };
   const result = await inTransaction(db, async (session) => {
     const bag = await loadBag(db, code, session);
-    if (!visible(user, bag) || !atOrigin(user, bag)) throw new BagError("Only the origin branch can dispatch this bag.", 403);
+    if (!visible(user, bag) || !atOrigin(user, bag)) throw new BagError("Only the origin branch can dispatch this box.", 403);
     requireStatus(bag, "dispatch");
     const now = new Date();
     const to = BAG_TRANSITIONS.dispatch.to;
@@ -428,7 +428,7 @@ export async function dispatchBag(db, user, code, body) {
     );
     if (modifiedCount !== trackings.length) {
       throw new BagError(
-        "Some packages in this bag changed since it was closed. Reopen the bag and check its packages.",
+        "Some packages in this box changed since it was closed. Reopen the box and check its packages.",
         409,
       );
     }
@@ -449,7 +449,7 @@ export async function receiveBag(db, user, code, body) {
   const result = await inTransaction(db, async (session) => {
     const bag = await loadBag(db, code, session);
     if (!visible(user, bag) || !atDestination(user, bag)) {
-      throw new BagError(`Only ${bag.destination.name} can receive this bag.`, 403);
+      throw new BagError(`Only ${bag.destination.name} can receive this box.`, 403);
     }
     requireStatus(bag, "receive");
 
@@ -796,7 +796,7 @@ export async function incomingBags(db, user) {
 
 export async function bagDetails(db, user, code) {
   const bag = await loadBag(db, code);
-  if (!visible(user, bag)) throw new BagError("Bag not found", 404);
+  if (!visible(user, bag)) throw new BagError("Box not found", 404);
   const trackings = bag.items.map((item) => item.tracking);
   const [packages, exceptions] = await Promise.all([
     db

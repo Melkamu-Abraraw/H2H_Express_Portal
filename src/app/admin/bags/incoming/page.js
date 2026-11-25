@@ -1,7 +1,7 @@
 import { BagsIncoming } from "@/components/admin/bags-incoming";
 
 export const metadata = {
-  title: "Incoming bags | H2H Express",
+  title: "Incoming boxes | H2H Express",
 };
 
 export default function IncomingBagsPage() {

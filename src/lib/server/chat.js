@@ -2,7 +2,7 @@ import { ObjectId } from "mongodb";
 import { roleLabel } from "@/lib/permissions";
 import { forbidden, requireAccess } from "@/lib/server/auth";
 import { DIRECTIONS } from "@/components/admin/shipping-routes";
-import { CHAT_PHOTO_FOLDER, isOwnPhoto } from "@/lib/server/cloudinary";
+import { isStoredPhoto } from "@/lib/server/r2";
 import { getConfig } from "@/lib/server/config";
 import { getDb } from "@/lib/server/mongodb";
 import { announce, tokenRequestFor } from "@/lib/server/realtime";
@@ -199,15 +199,15 @@ export async function setMuted(db, user, conversationId, muted) {
     .updateOne({ userId: user._id, conversationId }, { $set: { muted } }, { upsert: true });
 }
 
-// Photos attached to a message: only ones uploaded to our chat folder.
+// Photos attached to a message: only chat photos this app stored in R2.
 export function parsePhotos(value) {
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value) || value.length > PHOTOS_MAX || !value.every((photo) => isOwnPhoto(photo, CHAT_PHOTO_FOLDER))) {
+  if (!Array.isArray(value) || value.length > PHOTOS_MAX || !value.every((photo) => isStoredPhoto(photo, "chat"))) {
     return null;
   }
-  return value.map(({ url, publicId, width, height }) => ({
+  return value.map(({ url, key, width, height }) => ({
     url,
-    publicId,
+    key,
     width: Number(width) || null,
     height: Number(height) || null,
   }));

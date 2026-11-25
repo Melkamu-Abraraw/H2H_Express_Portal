@@ -1,5 +1,6 @@
-// Browser-only: shrinks photos and uploads them straight to Cloudinary with a server signature.
+// Browser-only: shrinks photos, then uploads them through our server to Cloudflare R2.
 
+// Resolves to { blob, width, height }: a JPEG no larger than maxDim on its longest side.
 function compressImage(file, maxDim = 1600, quality = 0.8) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -12,7 +13,8 @@ function compressImage(file, maxDim = 1600, quality = 0.8) {
       canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
       canvas.toBlob(
-        (blob) => (blob ? resolve(blob) : reject(new Error("Couldn't process a photo"))),
+        (blob) =>
+          blob ? resolve({ blob, width: canvas.width, height: canvas.height }) : reject(new Error("Couldn't process a photo")),
         "image/jpeg",
         quality,
       );
@@ -33,38 +35,21 @@ async function readJson(response) {
   }
 }
 
-// `purpose` picks the Cloudinary folder (and the permission the server checks): "package" or "chat".
-export async function uploadPhotos(files, purpose = "package") {
-  if (!files.length) return [];
-  const sign = await readJson(
-    await fetch("/api/uploads/sign", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ purpose }),
-    }),
-  );
-  if (!sign.success) throw new Error(sign.error || "Couldn't start the photo upload");
-
+// Uploads through our server into the private R2 bucket. `purpose` is "package" or "chat" (the
+// server checks the matching permission). Each photo comes back as { url, key, width, height }.
+export function uploadPhotos(files, purpose = "package") {
   return Promise.all(
     files.map(async (file) => {
+      const { blob, width, height } = await compressImage(file);
       const body = new FormData();
-      body.append("file", await compressImage(file));
-      body.append("api_key", sign.apiKey);
-      body.append("timestamp", sign.timestamp);
-      body.append("signature", sign.signature);
-      body.append("folder", sign.folder);
-      const response = await fetch(
-        `https://api.cloudinary.com/v1_1/${sign.cloudName}/image/upload`,
-        { method: "POST", body },
-      );
+      body.append("purpose", purpose);
+      body.append("file", blob, "photo.jpg");
+      body.append("width", String(width));
+      body.append("height", String(height));
+      const response = await fetch("/api/uploads", { method: "POST", body });
       const result = await readJson(response);
-      if (!response.ok) throw new Error(result.error?.message || "Photo upload failed");
-      return {
-        url: result.secure_url,
-        publicId: result.public_id,
-        width: result.width,
-        height: result.height,
-      };
+      if (!result.success) throw new Error(result.error || "Photo upload failed");
+      return result.photo;
     }),
   );
 }

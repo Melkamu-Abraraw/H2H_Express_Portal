@@ -78,12 +78,12 @@ export const LOST_RESOLUTIONS = ["lost", "destroyed"];
 
 // Lines on a package's own history, in plain words for staff.
 export const HISTORY_LABELS = {
-  added_to_bag: "Added to bag",
-  removed_from_bag: "Removed from bag",
-  bag_cancelled: "Bag cancelled, package released",
-  bag_dispatched: "Bag dispatched · In transit",
-  bag_received: "Bag received at destination branch · Ready for pickup",
-  missing: "Missing when the bag was opened",
+  added_to_bag: "Added to box",
+  removed_from_bag: "Removed from box",
+  bag_cancelled: "Box cancelled, package released",
+  bag_dispatched: "Box dispatched · In transit",
+  bag_received: "Box received at destination branch · Ready for pickup",
+  missing: "Missing when the box was opened",
   damaged: "Arrived damaged",
   found: "Found after being reported missing",
   lost: "Closed as lost",

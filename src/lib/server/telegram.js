@@ -2,6 +2,7 @@ import { lastStep, stepsFor, trackingSteps } from "@/components/admin/package-tr
 import { handlingLabels } from "@/lib/handling";
 import { otherCurrency } from "@/lib/exchange";
 import { getExchangeRates } from "@/lib/server/exchange";
+import { isPhotoKey, signedUrl } from "@/lib/server/r2";
 
 const API = "https://api.telegram.org";
 
@@ -9,12 +10,18 @@ export function telegramConfigured() {
   return Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
 }
 
-async function call(method, body) {
+// Telegram limits a photo's caption to 1024 characters. Only cards well under it go out as a
+// photo, leaving room for the status line to grow when the card is edited later.
+const CAPTION_MAX = 900;
+// An album holds at most 10 photos.
+const ALBUM_MAX = 10;
+
+async function call(method, body, timeout = 8000) {
   const response = await fetch(`${API}/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(timeout),
   });
   const result = await response.json().catch(() => null);
   if (!result?.ok) throw new Error(result?.description || `Telegram ${method} failed`);
@@ -32,17 +39,33 @@ export function sendMessage(text, { chatId = process.env.TELEGRAM_CHAT_ID, reply
   });
 }
 
-// Rewrites a post in place. Telegram errors when nothing changed; that's fine to ignore.
+// Telegram downloads the photo from its URL, which can take longer than a text message.
+function sendPhoto(url, caption, { chatId = process.env.TELEGRAM_CHAT_ID, replyMarkup } = {}) {
+  return call(
+    "sendPhoto",
+    { chat_id: chatId, photo: url, caption, parse_mode: "HTML", ...(replyMarkup && { reply_markup: replyMarkup }) },
+    20000,
+  );
+}
+
+// One photo on its own, or several as an album, replying to the package's card.
+function sendPhotos(urls, { chatId = process.env.TELEGRAM_CHAT_ID, replyTo } = {}) {
+  const reply = replyTo && { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } };
+  if (urls.length === 1) return call("sendPhoto", { chat_id: chatId, photo: urls[0], ...reply }, 20000);
+  return call("sendMediaGroup", { chat_id: chatId, media: urls.map((url) => ({ type: "photo", media: url })), ...reply }, 30000);
+}
+
+// Rewrites a post in place. A card posted as a photo keeps its text in the caption, which
+// Telegram edits with a different method. Telegram errors when nothing changed; that's fine to ignore.
 export async function editMessage(chatId, messageId, text, replyMarkup) {
+  const fields = { chat_id: chatId, message_id: messageId, parse_mode: "HTML", reply_markup: replyMarkup ?? { inline_keyboard: [] } };
   try {
-    await call("editMessageText", {
-      chat_id: chatId,
-      message_id: messageId,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-      reply_markup: replyMarkup ?? { inline_keyboard: [] },
-    });
+    try {
+      await call("editMessageText", { ...fields, text, disable_web_page_preview: true });
+    } catch (error) {
+      if (!/no text in the message/i.test(error.message)) throw error;
+      await call("editMessageCaption", { ...fields, caption: text });
+    }
   } catch (error) {
     if (!/not modified/i.test(error.message)) throw error;
   }
@@ -131,16 +154,52 @@ export function packageKeyboard(pkg) {
   return { inline_keyboard: rows };
 }
 
+// Telegram downloads photos itself, so it needs a link that works without signing in: a signed R2
+// link (it fetches right away, so an hour is plenty), or a photo's own public https link.
+function telegramPhotoUrl(photo) {
+  if (isPhotoKey(photo?.key)) {
+    try {
+      return signedUrl(photo.key, 3600);
+    } catch {
+      return null;
+    }
+  }
+  return /^https:\/\//.test(photo?.url ?? "") ? photo.url : null;
+}
+
 // Posts a newly registered package to the group; returns where it landed so replies can be matched.
+// With photos, the card itself is the first photo (details in the caption) and any others follow
+// as an album replying to it. A card too long for a caption stays text, with every photo in the reply.
 export async function announcePackage(pkg, rate = null) {
   if (!telegramConfigured()) return { status: "not-configured" };
+  const text = packageText(pkg, rate);
+  const replyMarkup = packageKeyboard(pkg);
+  const photos = (pkg.photos ?? []).map(telegramPhotoUrl).filter(Boolean).slice(0, ALBUM_MAX + 1);
+
+  let message = null;
+  let rest = photos;
+  if (photos.length && text.length <= CAPTION_MAX) {
+    try {
+      message = await sendPhoto(photos[0], text, { replyMarkup });
+      rest = photos.slice(1);
+    } catch (error) {
+      // Telegram couldn't fetch or accept the photo: post the card as text so it isn't lost.
+      console.error("Telegram photo post failed, sending text instead", error);
+    }
+  }
   try {
-    const message = await sendMessage(packageText(pkg, rate), { replyMarkup: packageKeyboard(pkg) });
-    return { status: "sent", chatId: String(message.chat.id), messageId: message.message_id };
+    message ??= await sendMessage(text, { replyMarkup });
   } catch (error) {
     console.error("Telegram post failed", error);
     return { status: "failed" };
   }
+
+  if (rest.length) {
+    await sendPhotos(rest.slice(0, ALBUM_MAX), { chatId: message.chat.id, replyTo: message.message_id }).catch((error) =>
+      console.error("Sending package photos to Telegram failed", error),
+    );
+  }
+  return { status: "sent", chatId: String(message.chat.id), messageId: message.message_id };
 }
 
 // Redraws the group posts of packages whose status changed elsewhere (e.g. the admin portal),

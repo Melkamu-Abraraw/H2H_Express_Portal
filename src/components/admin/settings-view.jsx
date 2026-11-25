@@ -230,8 +230,8 @@ function PackageRules() {
 }
 
 const CUSTOMER_EMAILS = [
-  { key: "departed", label: "In transit", hint: "When the package's bag is dispatched." },
-  { key: "pickup", label: "Ready for pickup", hint: "When the bag is received at the destination branch. Includes any balance due." },
+  { key: "departed", label: "In transit", hint: "When the package's box is dispatched." },
+  { key: "pickup", label: "Ready for pickup", hint: "When the box is received at the destination branch. Includes any balance due." },
   { key: "delivered", label: "Delivered", hint: "When the package is handed over to the receiver." },
   { key: "lost", label: "Lost or damaged", hint: "When a missing package is closed as lost, or a damaged one as destroyed. Mentions any refund." },
 ];

@@ -10,6 +10,6 @@ export async function GET() {
     const bags = await incomingBags(await getDb(), access.user);
     return Response.json({ success: true, bags, branch: access.user.branch ?? null });
   } catch (error) {
-    return bagErrorResponse(error, "Couldn't load incoming bags");
+    return bagErrorResponse(error, "Couldn't load incoming boxes");
   }
 }

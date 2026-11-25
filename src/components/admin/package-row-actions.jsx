@@ -270,8 +270,7 @@ function PaymentPanel({ pkg }) {
 // packages to In transit and Ready for pickup; the only action is handing a package over.
 function NextStepNote({ pkg }) {
   const text = {
-    received: "Put it in a bag to send it. It goes In transit when the bag is dispatched.",
-    departed: "It becomes Ready for pickup when its bag is received at the destination branch.",
+    departed: "It becomes Ready for pickup when its box is received at the destination branch.",
     delivered: "Collected by the receiver.",
   }[lastStep(pkg)];
   return text ? <p className="text-xs text-muted-foreground">{text}</p> : null;
@@ -330,12 +329,12 @@ export function PackageRowActions({ pkg, onHandOver, onCollect, canUpdate = true
             <>
               <PaymentPanel pkg={pkg} />
               <p className="rounded-md border px-3 py-2 text-sm">
-                In bag{" "}
+                In box{" "}
                 <Link href={`/admin/bags/${pkg.bag.code}`} className="font-mono font-medium hover:underline">
                   {pkg.bag.code}
                 </Link>
                 <span className="block text-xs text-muted-foreground">
-                  It moves with the bag: In transit when the bag is dispatched, Ready for pickup when it&apos;s received.
+                  It moves with the box: In transit when the box is dispatched, Ready for pickup when it&apos;s received.
                 </span>
               </p>
             </>

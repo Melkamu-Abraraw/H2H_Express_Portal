@@ -315,7 +315,7 @@ function bagIssueAlerts(packages) {
       count: missing.length,
       trackings: missing.map((pkg) => pkg.tracking),
       title: "Missing",
-      detail: `From ${bags(missing)} ${bags(missing) === 1 ? "bag" : "bags"} · Resolve in Package issues`,
+      detail: `From ${bags(missing)} ${bags(missing) === 1 ? "box" : "boxes"} · Resolve in Package issues`,
       href: "/admin/bags/reports",
     },
     {
@@ -324,7 +324,7 @@ function bagIssueAlerts(packages) {
       count: damaged.length,
       trackings: damaged.map((pkg) => pkg.tracking),
       title: "Damaged",
-      detail: `From ${bags(damaged)} ${bags(damaged) === 1 ? "bag" : "bags"} · Resolve in Package issues`,
+      detail: `From ${bags(damaged)} ${bags(damaged) === 1 ? "box" : "boxes"} · Resolve in Package issues`,
       href: "/admin/bags/reports",
     },
   ];

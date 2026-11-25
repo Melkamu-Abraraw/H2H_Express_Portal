@@ -13,26 +13,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-// Package photos are on Cloudinary, which can resize on the fly: ask for the size we show instead
-// of downloading the full photo for a 32px thumbnail.
-function sized(url, transform) {
-  return url.includes("/image/upload/") ? url.replace("/image/upload/", `/image/upload/${transform}/`) : url;
-}
-
-// Tries the resized copy first. If Cloudinary refuses it (accounts with strict transformations
-// only serve the original), falls back to the original, then to nothing.
-function PhotoImage({ url, transform, onFail, alt, ...props }) {
-  const [attempt, setAttempt] = useState(0);
-  const sources = [sized(url, transform), url];
+// Photos are served from R2 through /api/photos, already shrunk to 1600px when uploaded. If one
+// can't be loaded, `onFail` lets the caller show the "No photo" placeholder instead.
+function PhotoImage({ url, onFail, alt, ...props }) {
   return (
-    // Cloudinary serves these; next/image would need the host configured.
+    // Served by our own route with a redirect to a signed link; next/image can't optimise that.
     // eslint-disable-next-line @next/next/no-img-element
-    <img
-      {...props}
-      alt={alt}
-      src={sources[attempt]}
-      onError={() => (attempt + 1 < sources.length && sources[attempt] !== sources[attempt + 1] ? setAttempt(attempt + 1) : onFail?.())}
-    />
+    <img {...props} alt={alt} src={url} onError={() => onFail?.()} />
   );
 }
 
@@ -66,7 +53,6 @@ export function PackagePhotoThumb({ pkg }) {
       >
         <PhotoImage
           url={photos[0].url}
-          transform="c_fill,w_64,h_64,q_auto,f_auto"
           onFail={() => setBroken(true)}
           alt=""
           width={32}
@@ -98,7 +84,6 @@ export function PackagePhotoThumb({ pkg }) {
               >
                 <PhotoImage
                   url={photo.url}
-                  transform="c_limit,w_900,q_auto,f_auto"
                   alt={`Photo ${index + 1} of ${pkg.tracking}`}
                   loading="lazy"
                   className="max-h-[60vh] w-full object-contain"

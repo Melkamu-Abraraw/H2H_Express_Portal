@@ -20,7 +20,7 @@ export const ROLES = [
   {
     value: "warehouse",
     label: "Warehouse",
-    description: "Updates package tracking steps, and dispatches and receives bags.",
+    description: "Updates package tracking steps, and dispatches and receives boxes.",
   },
 ];
 

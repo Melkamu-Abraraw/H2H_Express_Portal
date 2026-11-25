@@ -52,16 +52,16 @@ export function BagsIncoming() {
   return (
     <>
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Incoming bags</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Incoming boxes</h1>
         <p className="text-sm text-muted-foreground">
-          {data?.branch ? `Bags on their way to ${data.branch.name}.` : "Bags on their way to every branch."} Open one to check its packages in.
+          {data?.branch ? `Boxes on their way to ${data.branch.name}.` : "Boxes on their way to every branch."} Open one to check its packages in.
         </p>
       </div>
       <Card className="min-w-0 pb-0">
         <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="relative w-full sm:max-w-xs">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input type="search" aria-label="Search by bag reference" placeholder="Search bag reference..." className="pl-8 font-mono" value={term} onChange={(event) => setTerm(event.target.value)} />
+            <Input type="search" aria-label="Search by box reference" placeholder="Search box reference..." className="pl-8 font-mono" value={term} onChange={(event) => setTerm(event.target.value)} />
           </div>
           <p role="status" className="text-sm text-muted-foreground sm:ml-auto">
             <span className="font-mono">{rows.length}</span> in transit
@@ -72,7 +72,7 @@ export function BagsIncoming() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="pl-4 text-muted-foreground">Bag</TableHead>
+                  <TableHead className="pl-4 text-muted-foreground">Box</TableHead>
                   <TableHead className="text-muted-foreground">From</TableHead>
                   {!data?.branch && <TableHead className="text-muted-foreground">To</TableHead>}
                   <TableHead className="text-right text-muted-foreground">Packages</TableHead>
@@ -112,14 +112,14 @@ export function BagsIncoming() {
                       {load.state === "loading" ? (
                         <span className="inline-flex items-center gap-2">
                           <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-                          Loading incoming bags…
+                          Loading incoming boxes…
                         </span>
                       ) : load.state === "error" ? (
-                        `Couldn't load incoming bags: ${load.message}`
+                        `Couldn't load incoming boxes: ${load.message}`
                       ) : q ? (
-                        "No incoming bag matches."
+                        "No incoming box matches."
                       ) : (
-                        "No bags are on their way right now."
+                        "No boxes are on their way right now."
                       )}
                     </TableCell>
                   </TableRow>

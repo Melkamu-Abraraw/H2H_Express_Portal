@@ -48,14 +48,14 @@ export async function buildManifestPdf(bag) {
   const height = doc.internal.pageSize.getHeight();
   const margin = 14;
   const right = width - margin;
-  await header(doc, "Bag manifest", `Printed ${when(new Date())}`, margin);
+  await header(doc, "Box manifest", `Printed ${when(new Date())}`, margin);
 
   // Bag reference
   let y = 30;
   doc.setDrawColor(249, 192, 60).setFillColor(255, 251, 235).setLineWidth(0.4);
   doc.roundedRect(margin, y, right - margin, 30, 2, 2, "FD");
   textStyle(doc, 8.5, MUTED);
-  doc.text("Bag reference", margin + 5, y + 8);
+  doc.text("Box reference", margin + 5, y + 8);
   textStyle(doc, 20, INK, "bold", "courier");
   doc.text(bag.code, margin + 5, y + 17);
   textStyle(doc, 9, MUTED);

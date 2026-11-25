@@ -195,7 +195,7 @@ export function BagsReport() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Package issues</h1>
         <p className="text-sm text-muted-foreground">
-          Packages found missing or damaged when their bag was received.
+          Packages found missing or damaged when their box was received.
         </p>
       </div>
       <StatusLine result={notice} onDismiss={() => setNotice(null)} />
@@ -207,7 +207,7 @@ export function BagsReport() {
                 <TableRow>
                   <TableHead className="pl-4 text-muted-foreground">Package</TableHead>
                   <TableHead className="text-muted-foreground">Problem</TableHead>
-                  <TableHead className="text-muted-foreground">Bag</TableHead>
+                  <TableHead className="text-muted-foreground">Box</TableHead>
                   <TableHead className="text-muted-foreground">Route</TableHead>
                   <TableHead className="text-muted-foreground">Sender</TableHead>
                   <TableHead className="text-muted-foreground">Receiver</TableHead>
@@ -292,7 +292,7 @@ export function BagsReport() {
           open={Boolean(resolving)}
           onOpenChange={(open) => !open && setResolving(null)}
           title={EXCEPTION_TYPES[resolving.type]}
-          description={`From bag ${resolving.bagCode}`}
+          description={`From box ${resolving.bagCode}`}
           confirmLabel={OUTCOMES[resolution]?.action ?? "Resolve"}
           disabled={!resolution || refundInvalid}
           onConfirm={async () => {

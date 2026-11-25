@@ -40,7 +40,7 @@ export async function GET(request, { params }) {
 }
 
 // POST /api/chat/:id/messages: { text, photos?, replyTo? } sends a message as the signed-in user.
-// Photos must already be uploaded to the chat folder (see /api/uploads/sign).
+// Photos must already be stored in R2 as chat photos (see /api/uploads).
 export async function POST(request, { params }) {
   const body = await request.json().catch(() => null);
   const text = typeof body?.text === "string" ? body.text.trim() : "";

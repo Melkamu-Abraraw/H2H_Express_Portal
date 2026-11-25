@@ -5,7 +5,7 @@ import { BagDetail } from "@/components/admin/bag-detail";
 export const instant = false;
 
 export const metadata = {
-  title: "Bag | H2H Express",
+  title: "Box | H2H Express",
 };
 
 export default async function BagPage({ params }) {

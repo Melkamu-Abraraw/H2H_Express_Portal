@@ -14,7 +14,7 @@ export async function GET(request) {
     const result = await listBags(db, access.user, new URL(request.url).searchParams);
     return Response.json({ success: true, ...result });
   } catch (error) {
-    return bagErrorResponse(error, "Couldn't load bags");
+    return bagErrorResponse(error, "Couldn't load boxes");
   }
 }
 
@@ -29,6 +29,6 @@ export async function POST(request) {
     const bag = await createBag(await getDb(), access.user, body);
     return Response.json({ success: true, bag }, { status: 201 });
   } catch (error) {
-    return bagErrorResponse(error, "Couldn't create the bag");
+    return bagErrorResponse(error, "Couldn't create the box");
   }
 }

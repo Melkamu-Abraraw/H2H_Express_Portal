@@ -20,7 +20,7 @@ export async function GET(request, { params }) {
     const result = await bagDetails(await getDb(), access.user, decodeURIComponent(code).toUpperCase());
     return Response.json({ success: true, ...result });
   } catch (error) {
-    return bagErrorResponse(error, "Couldn't load the bag");
+    return bagErrorResponse(error, "Couldn't load the box");
   }
 }
 
@@ -53,6 +53,6 @@ export async function POST(request, { params }) {
     const result = await action.run(await getDb(), access.user, decodeURIComponent(code).toUpperCase(), body);
     return Response.json({ success: true, ...result });
   } catch (error) {
-    return bagErrorResponse(error, "Couldn't update the bag");
+    return bagErrorResponse(error, "Couldn't update the box");
   }
 }
